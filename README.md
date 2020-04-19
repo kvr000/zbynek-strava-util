@@ -12,6 +12,21 @@ There is new button on the left side - **Info Segments**. When pressing, it adds
 [Link](ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.js)
 
 
+## ZbynekStravaFilterClubUnwanted
+
+GreaseMonkey script, filtering out unexpected members from club recent activities.
+
+There is new action at the right of each activity - **Filter out**. This removes the athlete from the club feed and any of his activities too, even after refreshing the screen.
+
+At the top in list of tabs, there is new submenu - **Unwanted members**. This allows refreshing or resetting back to original stage.
+
+[Link](ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.js)
+
+
+# Donate
+
+Support future development by [donating](https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url).
+
 # License
 
 The code is released under version 2.0 of the [Apache License][], Apache-2.0 .
