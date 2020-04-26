@@ -1,6 +1,6 @@
 // ==UserScript==
 // @id          https://github.com/kvr000/zbynek-strava-util/ZbynekStravaFilterClubUnwanted/
-// @name        ZbynekStravaFilterClubUnwanted
+// @name        Zbynek Strava Filter Club Unwanted
 // @namespace   https://github.com/kvr000/zbynek-strava-util/
 // @description Strava - filter unwanted members from club activities
 // @author      Zbynek Vyskovsky, kvr000@gmail.com https://github.com/kvr000/
@@ -26,7 +26,7 @@
 
 window.addEventListener('load', function() {
 	'use strict';
-	let $ = jQuery.noConflict(true);
+	let $ = window.jQuery;
 
 	let unwanted;
 	try {
@@ -80,8 +80,8 @@ window.addEventListener('load', function() {
 	{
 		GM_addStyle(
 			".zbynek-strava-club-filter-unwanted-menu { position: absolute; display: inline-block }\n"+
-				".zbynek-strava-club-filter-unwanted-menu .items { display: none; position: absolute; padding: 12px 16px; background-color: #ffcccc }"+
-				".zbynek-strava-club-filter-unwanted-menu:hover .items { display: block; }"
+			".zbynek-strava-club-filter-unwanted-menu .items { display: none; position: absolute; padding: 12px 16px; background-color: #ffcccc }"+
+			".zbynek-strava-club-filter-unwanted-menu:hover .items { display: block; }"
 		);
 	}
 
