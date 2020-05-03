@@ -326,6 +326,12 @@ window.addEventListener('load', () => {
 			return element.firstChild;
 		}
 
+		setVisible(element, isVisible, visibilityType = 'block')
+		{
+			element.style.display = isVisible ? visibilityType : 'none';
+			return isVisible;
+		}
+
 	}
 
 	class LocalStorageCache
@@ -411,12 +417,18 @@ window.addEventListener('load', () => {
 
 	class ZbynekStravaSegmentInfoUi
 	{
+		/* constants */
 		PR_MATCH = /^\s*\u21b5?\s*((\d+:)*\d+)\s*\u21b5?\s*$/;
 
+		/* dependencies */
 		ajaxService;
 		segmentInfoCache;
 		segmentPreferenceDb;
 		dwrapper;
+
+		/* status */
+		filterEnabled = false;
+		batchUpdateEnabled = false;
 
 		constructor(ajaxService, segmentInfoCache, segmentPreferenceDb, documentWrapper)
 		{
@@ -615,6 +627,8 @@ window.addEventListener('load', () => {
 		{
 			let style =
 				".zbynek-strava-inline-select { appearance: none; border: none; }\n"+
+				".zbynek-strava-max-width { width: 100%; }\n"+
+				"\n"+
 				".zbynek-strava-segment-info-segment { display: block; }\n"+
 				".zbynek-strava-segment-info-segment > span { display: inline-block; text-align: right; padding-left: 0px; padding-right: 0px; font-weight: normal; }\n"+
 				".zbynek-strava-segment-info-segment > .distance { width: 12%; text-align: right; }\n"+
@@ -629,9 +643,12 @@ window.addEventListener('load', () => {
 				".zbynek-strava-segment-info-segment > .type { width: 10%; }\n"+
 				".zbynek-strava-segment-info-segment > .segmentLink { width: 4%; text-align: right; }\n"+
 				"\n"+
-				".zbynek-strava-segment-info-filter {}\n"+
-				".zbynek-strava-segment-info-filter > tbody > tr > td.activity { width: 80%; }\n"+
-				".zbynek-strava-segment-info-filter > tbody > tr > td.exec { width: 20%; }\n"+
+				".zbynek-strava-segment-info-filter { padding-top: 40px; padding-left: 20px; padding-right: 20px; }\n"+
+				".zbynek-strava-segment-info-filter > .enablers { width: 100%; }\n"+
+				".zbynek-strava-segment-info-filter > .enablers > .enabler { display: inline-block; width: 33%; }\n"+
+				".zbynek-strava-segment-info-filter > .row { width: 100%; display: none; }\n"+
+				".zbynek-strava-segment-info-filter > .row > .name { display: inline-block; width: 20%; }\n"+
+				".zbynek-strava-segment-info-filter > .row > .content { display: inline-block; width: 80%; }\n"+
 				"";
 			//GM_addStyle(style);
 			this.dwrapper.needXpathNode("//head", this.dwrapper.doc).appendChild(this.dwrapper.createElementEx("style", { type: "text/css" }, [
@@ -674,6 +691,28 @@ window.addEventListener('load', () => {
 				"pl$-"
 			);
 			sidenavEl.appendChild(menuEl);
+
+			let segmentListEl = this.dwrapper.needXpathNode("//ul[contains(concat(' ', @class, ' '), ' list-segments ')]", this.dwrapper.doc);
+			let filterEl = this.dwrapper.templateElement(
+				""+
+					"<div class='zbynek-strava-segment-info-filter'>\n"+
+					"	<div class='enablers'>\n"+
+					"		<span class='enabler'>JS Filter <input type='checkbox' pl$-onchange='toggleJsFilter'></input></span>\n"+
+					"		<span class='enabler'>Batch Update<input type='checkbox' pl$-onchange='toggleBatchUpdate'></input></span>\n"+
+					"		<span class='enabler'><input type='button' value='Update' pl$-onclick='refreshFunc'></input></span>\n"+
+					"	</div>\n"+
+					"	<div class='row' id='filter'><span class='name' title='JsFilter by JavaScript function'>JS Filter</span><span class='content'><textarea rows='10' class='zbynek-strava-max-width'></textarea></span></div>\n"+
+					"	<div class='row' id='batchUpdate'><span class='name' title='Batch update by JavaScript function'><div>JS Batch Update</div><div><input type='button' pl$-onclick='runUpdateFunc'></input></div></span><span class='content'><textarea rows='10' class='zbynek-strava-max-width'></textarea></span></div>\n"+
+					"</div>",
+				{
+					toggleFilter: (event) => this.filterEnabled = this.dwrapper.setVisible(this.dwrapper.needXpathNode("../../../div[@id = 'filter']", event.target), event.target.checked),
+					toggleBatchUpdate: (event) => this.batchUpdateEnabled = this.dwrapper.setVisible(this.dwrapper.needXpathNode("../../../div[@id = 'batchUpdate']", event.target), event.target.checked),
+					refreshFunc: (event) => alert("todo"),
+					runUpdateFunc: (event) => alert("todo"),
+				},
+				"pl$-"
+			);
+			segmentListEl.parentNode.insertBefore(filterEl, segmentListEl.nextSibling);
 		}
 
 		init()
