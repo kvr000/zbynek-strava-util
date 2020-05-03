@@ -8,9 +8,9 @@
 // @license     Apache-2.0
 // @homepage    https://github.com/kvr000/zbynek-strava-util/
 // @homepageURL https://github.com/kvr000/zbynek-strava-util/
-// @downloadURL https://github.com/kvr000/zbynek-strava-util/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.js
-// @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.js
-// @supportURL  https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.js
+// @downloadURL https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.user.js
+// @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.user.js
+// @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
 // @version     0.0.1
 // @grant       GM_addStyle
