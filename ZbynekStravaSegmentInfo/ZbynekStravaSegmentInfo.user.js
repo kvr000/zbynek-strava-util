@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     0.0.3
+// @version     0.0.4
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -87,6 +87,11 @@ window.addEventListener('load', () => {
 			return str === "" ? null : str;
 		}
 
+		static strNullToEmpty(str)
+		{
+			return str === "" ? null : str;
+		}
+
 		static objMap(obj, mapper)
 		{
 			return obj == null ? null : mapper(obj);
@@ -122,7 +127,7 @@ window.addEventListener('load', () => {
 
 		executeTemplate(method, urlTemplate, placeholders, options = null, data = null)
 		{
-			const url = urlTemplate.replace(/{([^}]+)}/g, (full, group1) => encodeURIComponent(Js.objGetElseThrow(placeholders, group1, (group1) => new Error("Undefined placeholder: "+group1))));
+			const url = this.convertTemplate(urlTemplate, placeholders);;
 			return this.execute(method, url, options, data);
 		}
 
@@ -134,6 +139,11 @@ window.addEventListener('load', () => {
 		getTemplate(urlTemplate, placeholders, options = null)
 		{
 			return this.executeTemplate("GET", urlTemplate, placeholders, options);
+		}
+
+		convertTemplate(urlTemplate, placeholders)
+		{
+			return urlTemplate.replace(/{([^}]+)}/g, (full, group1) => encodeURIComponent(Js.objGetElseThrow(placeholders, group1, (group1) => new Error("Undefined placeholder: "+group1))));
 		}
 	}
 
@@ -332,16 +342,41 @@ window.addEventListener('load', () => {
 
 	}
 
-	class LocalStorageCache
+	class AbstractCache
+	{
+		constructor(version, expiration)
+		{
+			this.version = version;
+			this.expiration = expiration;
+			this.pendingPromises = {};
+		}
+
+		promiseIfAbsent(id, resolver)
+		{
+			const item = this.get(id);
+			if (!item) {
+				let promise = this.pendingPromises[id];
+				if (promise == null) {
+					promise = this.pendingPromises[id] = resolver(id);
+				}
+				return promise.then(
+					(result) => { delete this.pendingPromises[id]; this.put(id, result); return result; },
+					(error) => { delete this.pendingPromises[id]; throw error; },
+				);
+			}
+			return Promise.resolve(item);
+		}
+
+	}
+
+	class GlobalDbStorageCache extends AbstractCache
 	{
 		constructor(storage, name, version, expiration)
 		{
+			super(version, expiration);
 			this.storage = storage;
 			this.name = name;
-			this.expiration = expiration;
 			this.pendingWrite = false;
-			this.version = version;
-			this.pendingPromises = {};
 			try {
 				this.cache = JSON.parse(this.storage.getItem(this.name));
 			}
@@ -363,22 +398,6 @@ window.addEventListener('load', () => {
 				this.scheduleUpdate();
 			}
 			return null;
-		}
-
-		computeIfAbsent(id, resolver)
-		{
-			const item = this.get(id);
-			if (!item) {
-				let promise = this.pendingPromises[id];
-				if (promise == null) {
-					promise = this.pendingPromises[id] = resolver(id);
-				}
-				return promise.then(
-					(result) => { delete this.pendingPromises[id]; this.put(id, result); return result; },
-					(error) => { delete this.pendingPromises[id]; throw error; },
-				);
-			}
-			return Promise.resolve(item);
 		}
 
 		put(id, value)
@@ -413,10 +432,159 @@ window.addEventListener('load', () => {
 
 	}
 
+	class PerItemStorageCache extends AbstractCache
+	{
+		constructor(storage, name, version, expiration)
+		{
+			super(version, expiration);
+			this.storage = storage;
+			this.prefix = name+"#";
+			this.pendingWrite = false;
+		}
+
+		get(id)
+		{
+			try {
+				const item = JSON.parse(this.storage.getItem(constructPath(id)));
+				if (item) {
+					if (item.version == this.version && (item.expire == null || item.expire > new Date().getTime())) {
+						return item.value;
+					}
+					remove(id);
+				}
+			}
+			catch (error) {
+			}
+			return null;
+		}
+
+		put(id, value)
+		{
+			this.storage.setItem(
+				constructPath(id),
+				JSON.stringify({
+					expire: this.expiration == null ? null : new Date().getTime()+this.expiration,
+				       	version: this.version,
+				       	value: value
+				})
+			);
+		}
+
+		remove(id)
+		{
+			this.storage.removeItem(constructPath(id));
+		}
+
+		constructPath(id)
+		{
+			return this.prefix+id;
+		}
+
+		dump()
+		{
+			let db = {};
+			for (let i = 0; i < this.storage.length; ++i) {
+				const key = this.storage.key(i);
+				if (key.startsWith(this.prefix)) {
+					db[key.substring(this.prefix.length)] = this.storage.getItem(key);
+				}
+			}
+			return JSON.stringify(db, null, "\t");
+		}
+
+		load(dump)
+		{
+			let db = JSON.parse(dump);
+			Object.getOwnPropertyNames(db).forEach((key) => {
+				this.storage.setItem(this.constructPath(key), JSON.stringify(db[key]));
+			});
+		}
+
+	}
+
+	class CsvFormatter
+	{
+		static SPECIAL_MATCH = /[",]/;
+
+		headerMap = null;
+		headerIndex = null;
+		output = "";
+
+		constructor()
+		{
+		}
+
+		writeHeader(headerMap)
+		{
+			let i = 0;
+			this.headerMap = headerMap;
+			this.headerIndex = {};
+			let array = [];
+			Object.getOwnPropertyNames(headerMap).forEach((key) => {
+				this.headerIndex[key] = i;
+				array[i] = this.headerMap[key];
+				i++;
+			});
+			this.writeArray(array);
+		}
+
+		writeMapped(row)
+		{
+			if (this.headerIndex == null) {
+				throw new Error("headerMap not provided yet");
+			}
+			let array = [];
+			Object.getOwnPropertyNames(row).forEach((key) => {
+				let index = this.headerIndex[key];
+				if (index == null) {
+					throw new Error("headerMap not provided for field: "+key);
+				}
+				array[index] = row[key];
+			});
+			this.writeArray(array);
+		}
+
+		writeArray(row)
+		{
+			this.output += row.map((item) => this.formatItem(item)).join(",")+"\n";
+		}
+
+		getOutput()
+		{
+			return this.output;
+		}
+
+		formatItem(item)
+		{
+			let str = item == null ? "" : String(item);
+			if (CsvFormatter.SPECIAL_MATCH.test(str)) {
+				str = '"'+str.replace('"', '""')+'"';
+			}
+			return str;
+		}
+	}
+
 	class ZbynekStravaSegmentInfoUi
 	{
 		/* constants */
-		PR_MATCH = /^\s*\u21b5?\s*((\d+:)*\d+)\s*\u21b5?\s*$/;
+		static PR_MATCH = /^\s*\u21b5?\s*((\d+:)*\d+)\s*\u21b5?\s*$/;
+		static TIME_MATCH = /^((((\d+)d\s*)?(\d+):)?(\d+):)?(\d+)$/;
+		static LEVELS = {
+			"": "",
+			1: "L1 (Relax)",
+		       	2: "L2 (Always)",
+		       	3: "L3 (Easy)",
+		       	4: "L4 (Medium)",
+		       	5: "L5 (Difficult)",
+		       	6: "L6 (Extreme)",
+		       	7: "L7 (Local)",
+		       	8: "L8 (Pro)",
+		       	9: "L9 (Tour)",
+		       	11: "Dangerous",
+		       	12: "Short",
+		       	13: "Flagged",
+		       	14: "Wrong"
+		};
 
 		/* dependencies */
 		ajaxService;
@@ -450,10 +618,18 @@ window.addEventListener('load', () => {
 		{
 			if (!timeStr)
 				return null;
-			const group = timeStr.match(/^((((\d+)d\s*)?(\d+):)?(\d+):)?(\d+)$/);
+			const group = timeStr.match(ZbynekStravaSegmentInfoUi.TIME_MATCH);
 			if (group == null)
 				throw new Error("Failed to match time for: "+timeStr);
 			return ((Number(group[4] || 0)*24+Number(group[5] || 0))*60+Number(group[6] || 0))*60+Number(group[7]);
+		}
+
+		formatDate(time)
+		{
+			return Js.objMap(
+				new Date(time),
+				(d) => d.getUTCFullYear().toFixed(0).padStart(4, "0")+"-"+(d.getUTCMonth()+1).toFixed(0).padStart(2, "0")+"-"+d.getUTCDate().toFixed(0).padStart(2, "0")
+			);
 		}
 
 		formatTime(time)
@@ -472,6 +648,23 @@ window.addEventListener('load', () => {
 			return str;
 		}
 
+		formatTimeHms(time)
+		{
+			const sec = time%60;
+			let rest = parseInt(time/60);
+			let str = sec.toFixed(0);
+			const min = rest%60;
+			rest = parseInt(rest/60);
+			str = min.toFixed(0)+":"+str.padStart(2, "0");
+			str = rest.toFixed(0)+":"+str.padStart(5, "0");
+			return str;
+		}
+		
+		formatLevel(level)
+		{
+			return ZbynekStravaSegmentInfoUi.LEVELS[Js.strNullToEmpty(Js.objMap(level, String))];
+		}
+
 		enrichSegments()
 		{
 			let counter = 0;
@@ -482,48 +675,57 @@ window.addEventListener('load', () => {
 				const segmentId = segmentRow.getAttribute("data-segment-id");
 				Promise.all([
 					Promise.resolve(segmentRow),
-					this.segmentPreferenceDb.computeIfAbsent(segmentId, (segmentId) => Promise.resolve({
+					this.segmentPreferenceDb.promiseIfAbsent(segmentId, (segmentId) => Promise.resolve({
 						level: null,
 						type: null,
 						protect: null,
 					})),
-					this.segmentInfoCache.computeIfAbsent(segmentId, (segmentId) =>
+					this.segmentInfoCache.promiseIfAbsent(segmentId, (segmentId) =>
 						Promise.all([
 							this.ajaxService.getTemplate("/segments/{segmentId}", { segmentId }),
 							this.ajaxService.getTemplate("/stream/segments/{segmentId}?streams%5B%5D=altitude", { segmentId }),
 						])
 							.then((responses) => {
-								const html = new DOMParser().parseFromString(responses[0], 'text/html');
-								const distance_str = Js.strEmptyToNull(html.evaluate("//div[contains(@class, 'segment-heading')]//div[@class='stat' and span[@class='stat-subtext' and text() = 'Distance']]/*[@class='stat-text']/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const elevationDiff_str = Js.strEmptyToNull(html.evaluate("//div[contains(@class, 'segment-heading')]//div[@class='stat' and span[@class='stat-subtext' and text() = 'Elev Difference']]/*[@class='stat-text']/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const avgGrade_str = Js.strEmptyToNull(html.evaluate("//div[contains(@class, 'segment-heading')]//div[@class='stat' and span[@class='stat-subtext' and text() = 'Avg Grade']]/*[@class='stat-text']/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const prTime_str = Js.strEmptyToNull(html.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/strong[contains(text(), 'All-Time PR')]/following-sibling::text()", html, null, XPathResult.STRING_TYPE).stringValue.match(this.PR_MATCH)?.[1]);
-								const prLink = Js.strEmptyToNull(html.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", html, null, XPathResult.STRING_TYPE).stringValue);
-								const komTime_str = Js.strEmptyToNull(html.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/strong[contains(text(), 'KOM')]/following-sibling::text()", html, null, XPathResult.STRING_TYPE).stringValue.match(this.PR_MATCH)?.[1]);
-								const komLink = Js.strEmptyToNull(html.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", html, null, XPathResult.STRING_TYPE).stringValue);
-								const qomTime_str = Js.strEmptyToNull(html.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/strong[contains(text(), 'QOM')]/following-sibling::text()", html, null, XPathResult.STRING_TYPE).stringValue.match(this.PR_MATCH)?.[1]);
-								const qomLink = Js.strEmptyToNull(html.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", html, null, XPathResult.STRING_TYPE).stringValue);
-								const bestTime_str = Js.strEmptyToNull(html.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const bestSpeed_str = Js.strEmptyToNull(html.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'km/h']]/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const bestBpm_str = Js.strEmptyToNull(html.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'bpm']]/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const bestPower_str = Js.strEmptyToNull(html.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'W']]/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
-								const bestVam_str = Js.strEmptyToNull(html.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/preceding-sibling::td[1]/text()", html, null, XPathResult.STRING_TYPE, null).stringValue);
+								const root = new DOMParser().parseFromString(responses[0], 'text/html');
+								const name = Js.strEmptyToNull(root.evaluate("//div[contains(@class, 'segment-heading')]//*[@id='js-full-name']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const distance_str = Js.strEmptyToNull(root.evaluate("//div[contains(@class, 'segment-heading')]//div[@class='stat' and span[@class='stat-subtext' and text() = 'Distance']]/*[@class='stat-text']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const elevationDiff_str = Js.strEmptyToNull(root.evaluate("//div[contains(@class, 'segment-heading')]//div[@class='stat' and span[@class='stat-subtext' and text() = 'Elev Difference']]/*[@class='stat-text']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const avgGrade_str = Js.strEmptyToNull(root.evaluate("//div[contains(@class, 'segment-heading')]//div[@class='stat' and span[@class='stat-subtext' and text() = 'Avg Grade']]/*[@class='stat-text']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const prTime_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/strong[contains(text(), 'All-Time PR')]/following-sibling::text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoUi.PR_MATCH)?.[1]);
+								const prLink = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue);
+								const prDate_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue);
+								const komTime_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/strong[contains(text(), 'KOM')]/following-sibling::text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoUi.PR_MATCH)?.[1]);
+								const komLink = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue);
+								const qomTime_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/strong[contains(text(), 'QOM')]/following-sibling::text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoUi.PR_MATCH)?.[1]);
+								const qomLink = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue);
+								const bestTime_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const bestSpeed_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'km/h']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const bestBpm_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'bpm']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const bestPower_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'W']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+								const bestVam_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/preceding-sibling::td[1]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
 
 								const route = JSON.parse(responses[1]);
+								const distance = Js.objMap(distance_str, Number);
 								const elevationGain = route.altitude.reduce((total, current, index, array) => total+(index == 0 ? 0 : Math.max(0, current-array[index-1])), 0);
 								const elevationDiff = Js.nullElseGet(route.altitude.length > 0 ? route.altitude[route.altitude.length-1]-route.altitude[0] : null, () => Js.objMap(elevationDiff_str, Number));
+								const avgGradeStrava = Js.objMap(avgGrade_str, Number);
+								const avgGrade = distance != null && elevationDiff != null ? elevationDiff/(distance*10) : avgGradeStrava;
 								const segmentInfo = {
 									info: {
 										id: segmentId,
-										distance: Js.objMap(distance_str, Number),
-										avgGradeStrava: Js.objMap(avgGrade_str, Number),
+										name: name,
+										distance: distance,
+										avgGradeStrava: avgGradeStrava,
+										avgGrade: avgGrade,
 										elevationDiff: elevationDiff,
 										elevationGain: elevationGain,
+										url: this.ajaxService.convertTemplate("https://www.strava.com/segments/{segmentId}", { segmentId: segmentId }),
 									},
+									isKqom: prLink != null && (prLink == komLink || prLink == qomLink),
 									pr: {
 										time: this.convertTimeStr(prTime_str),
 										link: prLink,
-										isKqom: prLink != null && (prLink == komLink || prLink == qomLink),
+										date: Js.objMap(prDate_str, (str) => Date.parse(str+" UTC")),
 									},
 									kom: {
 										time: this.convertTimeStr(komTime_str),
@@ -541,7 +743,6 @@ window.addEventListener('load', () => {
 										vam: Js.objMap(bestVam_str, Number),
 									},
 								};
-								segmentInfo.info.avgGrade = segmentInfo.info.distance != null && segmentInfo.info.elevationDiff != null ? segmentInfo.info.elevationDiff/(segmentInfo.info.distance*10) : segmentInfo.info.avgGradeStrava;
 								this.segmentInfoCache.put(segmentId, segmentInfo);
 								GM_log(segmentInfo);
 								return segmentInfo;
@@ -581,12 +782,12 @@ window.addEventListener('load', () => {
 									elevationGain_str: segment.info.elevationGain?.toFixed(0),
 									pr_link: Js.nullElse(segment.pr.link, ""),
 									pr_time_str: () => this.formatTime(segment.pr.time),
-									pr_isKqom_str: segment.pr.isKqom ? "\uD83D\uDC51" : "",
+									pr_isKqom_str: segment.isKqom ? "\uD83D\uDC51" : "",
 									kqom_link: segment.kom.link,
 									kqom_time_str: () => this.formatTime(segment.best.time),
 									kqom_speed_str: () => segment.best.speed?.toFixed(1),
 									kqom_power_str: () => segment.best.power?.toFixed(0),
-									levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", 1: "L1 (Relax)", 2: "L2 (Always)", 3: "L3 (Easy)", 4: "L4 (Medium)", 5: "L5 (Difficult)", 6: "L6 (Extreme)", 7: "L7 (Local)", 8: "L8 (Pro)", 9: "L9 (Tour)", 11: "Wrong" }, preference.level, (value) => {
+									levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUi.LEVELS, preference.level, (value) => {
 										segmentFull.preference.level = value;
 										this.updatePreference(segmentFull);
 									}),
@@ -594,7 +795,7 @@ window.addEventListener('load', () => {
 										segmentFull.preference.type = value;
 										this.updatePreference(segmentFull);
 									}),
-									segmentLink: "https://www.strava.com/segments/"+encodeURIComponent(segment.info.id),
+									segmentLink: segment.info.url,
 								},
 								'pl$-'
 							);
@@ -636,6 +837,40 @@ window.addEventListener('load', () => {
 		{
 			GM_setClipboard(this.segmentPreferenceDb.dump());
 			alert("Preference dump was copied into clipboard");
+		}
+
+		exportList()
+		{
+			let csvFormatter = new CsvFormatter();
+			csvFormatter.writeHeader({
+				name: "Name",
+				level: "Level",
+				done: "Done",
+				stat: "Stat",
+				distance: "Distance",
+				place: "Place",
+				orientation: "Orientation",
+				direction: "Direction",
+				note: "Note",
+				time: "Time",
+				url: "Url",
+			});
+			this.listVisibleSegments().forEach((segmentRow) => {
+				const segmentFull = this.dwrapper.needXpathNode(".//span[@id = 'zbynek-strava-segment-info-segment']", segmentRow).segmentfull;
+				const segment = segmentFull.segment;
+				const preference = segmentFull.preference;
+				csvFormatter.writeMapped({
+					name: segment.info.name,
+					level: this.formatLevel(preference.level),
+					done: Js.objMap(segment.pr.date, this.formatDate),
+					stat: segment.isKqom ? "KOM" : null,
+					distance: segment.info.distance,
+					time: segment.pr.time != null ? this.formatTimeHms(segment.pr.time) : null,
+					url: segment.info.url,
+				});
+			});
+			GM_setClipboard(csvFormatter.getOutput());
+			alert("Listed segments exported into clipboard");
 		}
 
 		refreshContent()
@@ -732,6 +967,7 @@ window.addEventListener('load', () => {
 					"			</div>\n"+
 					"		</li>\n"+
 					"		<li><a pl$-onclick='exportDbFunc'>Export Db</a></li>\n"+
+					"		<li><a pl$-onclick='exportListFunc'>Export List</a></li>\n"+
 					"		<li><a pl$-href='donateUrl' target='_blank' title='Support further development by donating to project'>Donate to development</a></li>\n"+
 					"	</ul>\n"+
 					"</li>",
@@ -745,6 +981,7 @@ window.addEventListener('load', () => {
 					importDbSubmitFunc: (event) =>
 						this.dwrapper.evaluate("..//textarea", event.currentTarget, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.confirmHandler(),
 					exportDbFunc: () => this.exportDb(),
+					exportListFunc: () => this.exportList(),
 					donateUrl: "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+future+development.&currency_code=CAD&source=url",
 				},
 				"pl$-"
@@ -783,8 +1020,8 @@ window.addEventListener('load', () => {
 
 	new ZbynekStravaSegmentInfoUi(
 		new GmAjaxService(),
-		new LocalStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentInfoCache", 1, 10*86400*1000),
-		new LocalStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentPreferenceDb", 1, null),
+		new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentInfoCache", 1, 10*86400*1000),
+		new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentPreferenceDb", 1, null),
 		new HtmlWrapper(document)
 	)
 		.init();
