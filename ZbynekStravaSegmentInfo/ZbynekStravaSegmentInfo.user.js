@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     0.0.6
+// @version     0.0.7
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -21,6 +21,10 @@
 // @include     https://strava.com/segments/*
 // @include     http://www.strava.com/segments/*
 // @include     https://www.strava.com/segments/*
+// @include     https://www.strava.com/activities/*
+// @include     http://www.strava.com/activities/*
+// @include     https://strava.com/activities/*
+// @include     http://strava.com/activities/*
 // @grant       GM_log
 // @grant       GM_xmlhttpRequest
 // @grant       GM_addStyle
@@ -1231,7 +1235,7 @@ window.addEventListener('load', () => {
 								"<li id='zbynek-strava-segment-info-segment-level'>"+
 								"<div class='stat'>"+
 								"<span class='stat-subtext'>Level</span>"+
-								"<div class='zbynek-strava-segment-info-segment-value'><pl$-node name='levelSelect'></pl$-node></b>"+
+								"<div class='zbynek-strava-segment-info-segment-value'><pl$-node name='levelSelect'></pl$-node></div>"+
 								"</span>"+
 								"</div>"+
 								"</li>",
@@ -1339,6 +1343,117 @@ window.addEventListener('load', () => {
 		}
 	}
 
+	/**
+	 * UI for Activity UI
+	 */
+	class ZbynekStravaSegmentInfoActivityUi extends ZbynekStravaSegmentInfoUiBase
+	{
+		constructor(ajaxService, segmentInfoCache, segmentPreferenceDb, documentWrapper)
+		{
+			super(ajaxService, segmentInfoCache, segmentPreferenceDb, documentWrapper);
+		}
+
+		updateSegmentUi()
+		{
+			let counter = 0;
+			let processedCounter = 0;
+			const effortRows = this.dwrapper.listXpath("//table[contains(concat(' ', @class, ' '), ' segments ') or contains(concat(' ', @class, ' '), ' hidden-segments ')]//tr[@data-segment-effort-id]", this.dwrapper.doc);
+			for (let effortIdx in effortRows) {
+				const effortRow = effortRows[effortIdx];
+				const effortId = effortRow.getAttribute("data-segment-effort-id");
+				const segmentId = pageView.segmentEfforts().getEffort(effortId).attributes.segment_id;
+				Promise.all([
+					Promise.resolve(effortRow),
+					this.fetchSegmentFull(segmentId)
+				])
+					.then((segmentAll) => {
+						const effortRow = segmentAll[0];
+						const segmentFull = segmentAll[1];
+						try {
+							const segment = segmentFull.segment;
+							const preference = segmentFull.preference;
+							const gradeEl = this.dwrapper.templateElement(
+								"<span id='zbynek-strava-segment-info-activity-effort-avgGrade'> <pl$-text name='avgGrade_str'></pl$-text><abbr class='unit' title='percent'>%</abbr></span>",
+								{
+									avgGrade_str: segment.info.avgGrade?.toFixed(1),
+								},
+								'pl$-'
+							);
+							const elevationGainEl = this.dwrapper.templateElement(
+								"<span id='zbynek-strava-segment-info-activity-effort-elevationGain'>gain: <pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></span>",
+								{
+									elevationGain_str: segment.info.elevationGain?.toFixed(0),
+								},
+								'pl$-'
+							);
+							const bestPowerEl = this.dwrapper.templateElement(
+								"<span id='zbynek-strava-segment-info-activity-effort-bestPower'>best: <pl$-text name='bestPower_str'></pl$-text><abbr class='unit' title='watts'>W</abbr></span>",
+								{
+									bestPower_str: segment.best?.power?.toFixed(0),
+								},
+								'pl$-'
+							);
+							const levelEl = this.dwrapper.templateElement(
+								""+
+									"<td id='zbynek-strava-segment-info-activity-effort-type'>"+
+									"<pl$-node name='levelSelect'></pl$-node>"+
+									"</td>",
+								{
+									levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
+										preference.level = value;
+										this.updatePreference(segmentFull);
+									}),
+								},
+								'pl$-'
+							);
+							const typeEl = this.dwrapper.templateElement(
+								""+
+									"<td id='zbynek-strava-segment-info-activity-effort-type'>"+
+									"<pl$-node name='typeSelect'></pl$-node>"+
+									"</td>",
+								{
+									typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
+										preference.type = value;
+										this.updatePreference(segmentFull);
+									}),
+								},
+								'pl$-'
+							);
+							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-avgGrade']", effortRow);
+							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-elevationGain']", effortRow);
+							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-bestPower']", effortRow);
+							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-level']", effortRow);
+							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-type']", effortRow);
+							const origAvgGradeEl = this.dwrapper.needXpathNode(".//span[@title = 'Average grade']", effortRow);
+							const visibilityEl = this.dwrapper.needXpathNode(".//td[.//button[contains(concat(' ', @class, ' '), 'toggle-effort-visibility')]]", effortRow);
+							origAvgGradeEl.parentElement.appendChild(gradeEl);
+							origAvgGradeEl.parentElement.appendChild(elevationGainEl);
+							origAvgGradeEl.parentElement.appendChild(bestPowerEl);
+							visibilityEl.parentElement.insertBefore(levelEl, visibilityEl);
+							visibilityEl.parentElement.insertBefore(typeEl, visibilityEl);
+							this.dwrapper.setVisible(origAvgGradeEl, false);
+						}
+						catch (err) {
+							GM_log("Failed processing segment: "+segmentFull.segment.info.id, err);
+						}
+					});
+				if (++counter >= 1000000) break;
+			}
+			GM_log("Segments processed "+counter);
+		}
+
+		initializeUi()
+		{
+			this.updateSegmentUi();
+		}
+
+		init()
+		{
+			this.initializeStatic();
+			this.initializeUi();
+		}
+	}
+
 	if (/^\/activities\/\w+(|\/segments\/\w+)\/potential-segment-matches\/?$/.test(window.location.pathname)) {
 		new ZbynekStravaSegmentInfoMatcherUi(
 			new GmAjaxService(),
@@ -1353,6 +1468,15 @@ window.addEventListener('load', () => {
 			new GmAjaxService(),
 			new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentInfoCache", 1, 10*86400*1000),
 			new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentPreferenceDb", 1, null, { writebackTimeout: 1 }),
+			new HtmlWrapper(document)
+		)
+			.init();
+	}
+	else if (/^\/activities\/\w+(\/?|\/overview)$/.test(window.location.pathname)) {
+		new ZbynekStravaSegmentInfoActivityUi(
+			new GmAjaxService(),
+			new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentInfoCache", 1, 10*86400*1000),
+			new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentPreferenceDb", 1, null, { writebackTimeout: 5000 }),
 			new HtmlWrapper(document)
 		)
 			.init();
