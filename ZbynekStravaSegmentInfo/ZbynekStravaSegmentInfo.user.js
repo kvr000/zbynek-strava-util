@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     0.0.7
+// @version     0.0.8
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -196,9 +196,20 @@ window.addEventListener('load', () => {
 			}
 		}
 
-		insertAfter(before, inserted)
+		insertAfter(inserted, before)
 		{
 			before.parentNode.insertBefore(inserted, before.nextSibling);
+		}
+
+		insertMultiBefore(inserted, after)
+		{
+			inserted.forEach((e) => after.parentElement.insertBefore(e, after));
+		}
+
+		insertMultiAfter(inserted, before)
+		{
+			let last = before;
+			inserted.forEach((e) => { this.insertAfter(e, before); before = e; });
 		}
 
 		createElementEx(name, attrs, children)
@@ -239,115 +250,122 @@ window.addEventListener('load', () => {
 
 		templateElement(html, placeholders, prefix = 'pl$-')
 		{
-			const element = this.doc.createElement("span");
-			element.innerHTML = html;
-			for (let current = element.firstChild; current != null; ) {
-				if (current.localName.startsWith(prefix)) {
-					const command = current.localName.substring(prefix.length);
-					switch (command) {
-						case 'text':
-						case 'textrun': {
-							if (current.firstChild != null)
-								throw new Error("Replacement node contains unexpected subelements: "+current);
-							const textName = Js.nullElseThrow(current.getAttribute("name"), () => new Error("Cannot find name attribute in element: "+current));
-							const providedText = Js.objGetElseThrow(placeholders, textName, () => new Error("Cannot find placeholder: "+textName));
-							const node = current.parentNode.insertBefore(this.doc.createTextNode(command == 'textrun' ? providedText(current, this) : providedText), current);
-							const old = current;
-							current = node;
-							old.remove();
-							break;
-						}
+			const elements = this.templateElements(html, placeholders, prefix);
+			if (elements.length != 1) {
+				throw Error("Template resulted into multiple elements: ", elements);
+			}
+			return elements[0];
+		}
 
-						case 'node':
-						case 'noderun': {
-							if (current.firstChild != null)
-								throw new Error("Replacement node contains unexpected subelements: "+current);
-							const nodeName = Js.nullElseThrow(current.getAttribute("name"), () => new Error("Cannot find name attribute in element: "+current));
-							const providedNode = Js.objGetElseThrow(placeholders, nodeName, () => new Error("Cannot find placeholder: "+nodeName));
-							const node = current.parentNode.insertBefore(command == 'noderun' ? providedNode(current, this) : providedNode, current);
-							const old = current;
-							current = node;
-							old.remove();
-							break;
-						}
+		templateElements(html, placeholders, prefix = 'pl$-')
+		{
+			const elements = $.parseHTML(html);
+			for (let i = 0; i < elements.length; ++i) {
+				for (let current = elements[i]; current != null; ) {
+					if (current.localName.startsWith(prefix)) {
+						const command = current.localName.substring(prefix.length);
+						switch (command) {
+							case 'text':
+							case 'textrun': {
+								if (current.firstChild != null)
+									throw new Error("Replacement node contains unexpected subelements: "+current);
+								const textName = Js.nullElseThrow(current.getAttribute("name"), () => new Error("Cannot find name attribute in element: "+current));
+								const providedText = Js.objGetElseThrow(placeholders, textName, () => new Error("Cannot find placeholder: "+textName));
+								const node = current.parentNode.insertBefore(this.doc.createTextNode(command == 'textrun' ? providedText(current, this) : providedText), current);
+								const old = current;
+								current = node;
+								old.remove();
+								break;
+							}
 
-						case 'if':
-						case 'ifrun': {
-							let trueEl;
-							let falseEl;
-							if (current.firstElementChild == null || current.firstElementChild.nextSibling == null || current.firstElementChild.nextSibling.nextSibling != null) {
-								throw new Error("Expected exactly two elements of if block, true and false: "+current);
+							case 'node':
+							case 'noderun': {
+								if (current.firstChild != null)
+									throw new Error("Replacement node contains unexpected subelements: "+current);
+								const nodeName = Js.nullElseThrow(current.getAttribute("name"), () => new Error("Cannot find name attribute in element: "+current));
+								const providedNode = Js.objGetElseThrow(placeholders, nodeName, () => new Error("Cannot find placeholder: "+nodeName));
+								const node = current.parentNode.insertBefore(command == 'noderun' ? providedNode(current, this) : providedNode, current);
+								const old = current;
+								current = node;
+								old.remove();
+								break;
 							}
-							if (current.firstElementChild.localName == 'true') {
-								trueEl = current.firstElementChild;
-								if (trueEl.nextSibling.localName != 'false')
-									throw new Error("Expected false block, got "+trueEl.nextSibling);
-								falseEl = trueEl.nextSibling;
+
+							case 'if':
+							case 'ifrun': {
+								let trueEl;
+								let falseEl;
+								if (current.firstElementChild == null || current.firstElementChild.nextSibling == null || current.firstElementChild.nextSibling.nextSibling != null) {
+									throw new Error("Expected exactly two elements of if block, true and false: "+current);
+								}
+								if (current.firstElementChild.localName == 'true') {
+									trueEl = current.firstElementChild;
+									if (trueEl.nextSibling.localName != 'false')
+										throw new Error("Expected false block, got "+trueEl.nextSibling);
+									falseEl = trueEl.nextSibling;
+								}
+								else if (current.firstElementChild.localName == 'false') {
+									falseEl = current.firstElementChild;
+									if (falseEl.nextSibling.localName != 'true')
+										throw new Error("Expected false block, got "+falseEl.nextSibling);
+									trueEl = trueEl.nextSibling;
+								}
+								const conditionName = Js.nullElseThrow(current.getAttribute("condition"), () => new Error("Cannot find condition attribute in element: "+current));
+								const condition = Js.objGetElseThrow(placeholders, conditionName, () => new Error("Cannot find placeholder: "+conditionName));
+								const chosen = (command == 'ifrun' ? condition(current, this) : condition) ? trueEl : falseEl;
+								let restart = chosen.firstChild;
+								while (chosen.firstChild) {
+									const next = chosen.firstChild;
+									current.parentNode.insertBefore(next, current);
+								}
+								if (restart == null) {
+									restart = current;
+									do {
+										if (restart.nextElementSibling != null) {
+											restart = restart.nextElementSibling;
+											break;
+										}
+										restart = restart.parentElement;
+									} while (restart != null);
+								}
+								current.remove();
+								current = restart;
+								continue;
 							}
-							else if (current.firstElementChild.localName == 'false') {
-								falseEl = current.firstElementChild;
-								if (falseEl.nextSibling.localName != 'true')
-									throw new Error("Expected false block, got "+falseEl.nextSibling);
-								trueEl = trueEl.nextSibling;
+
+							default:
+								throw new Error("Unexpected element: "+current);
+						}
+					}
+					else {
+						if (current.attributes.length != 0) {
+							const names = [];
+							for (let i = 0; i < current.attributes.length; ++i) {
+								names.push(current.attributes[i].name);
 							}
-							const conditionName = Js.nullElseThrow(current.getAttribute("condition"), () => new Error("Cannot find condition attribute in element: "+current));
-							const condition = Js.objGetElseThrow(placeholders, conditionName, () => new Error("Cannot find placeholder: "+conditionName));
-							const chosen = (command == 'ifrun' ? condition(current, this) : condition) ? trueEl : falseEl;
-							let restart = chosen.firstChild;
-							while (chosen.firstChild) {
-								const next = chosen.firstChild;
-								current.parentNode.insertBefore(next, current);
-							}
-							if (restart == null) {
-								restart = current;
-								do {
-									if (restart.nextElementSibling != null) {
-										restart = restart.nextElementSibling;
-										break;
-									}
-									restart = restart.parentElement;
-								} while (restart != null);
-							}
-							current.remove();
-							current = restart;
+							names.forEach((name) => {
+								if (name.startsWith(prefix)) {
+									const placeholder = current.getAttribute(name);
+									current[name.substring(prefix.length)] =  Js.objGetElseThrow(placeholders, placeholder, () => new Error("Cannot find placeholder: "+placeholder));
+									current.removeAttribute(name);
+								}
+							});
+						}
+						if (current.firstElementChild != null) {
+							current = current.firstElementChild;
 							continue;
 						}
-
-						default:
-							throw new Error("Unexpected element: "+current);
 					}
-				}
-				else {
-					if (current.attributes.length != 0) {
-						const names = [];
-						for (let i = 0; i < current.attributes.length; ++i) {
-							names.push(current.attributes[i].name);
+					do {
+						if (current.nextElementSibling != null) {
+							current = current.nextElementSibling;
+							break;
 						}
-						names.forEach((name) => {
-							if (name.startsWith(prefix)) {
-								const placeholder = current.getAttribute(name);
-								current[name.substring(prefix.length)] =  Js.objGetElseThrow(placeholders, placeholder, () => new Error("Cannot find placeholder: "+placeholder));
-								current.removeAttribute(name);
-							}
-						});
-					}
-					if (current.firstElementChild != null) {
-						current = current.firstElementChild;
-						continue;
-					}
+						current = current.parentElement;
+					} while (current != null);
 				}
-				do {
-					if (current.nextElementSibling != null) {
-						current = current.nextElementSibling;
-						break;
-					}
-					current = current.parentElement;
-				} while (current != null);
 			}
-			if (element.firstChild.nextSibling != null) {
-				throw Error("Template resulted into multiple elements: ", element.children);
-			}
-			return element.firstChild;
+			return elements;
 		}
 
 		setVisible(element, isVisible, visibilityType = 'block')
@@ -653,6 +671,8 @@ window.addEventListener('load', () => {
 		segmentPreferenceDb;
 		dwrapper;
 
+		donateUrl = "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+future+development.&currency_code=CAD&source=url";
+
 		constructor(ajaxService, segmentInfoCache, segmentPreferenceDb, documentWrapper)
 		{
 			this.ajaxService = ajaxService;
@@ -782,7 +802,7 @@ window.addEventListener('load', () => {
 			const bestTime = this.convertTimeStr(bestTime_str);
 			const bestSpeed = Js.objMap(bestSpeed_str, Number);
 			const bestHeartRate = Js.objMap(bestBpm_str, Number);
-			const bestPower = Js.objMap(bestPower_str, Number);
+			const bestPower = Js.objMap(bestPower_str?.replace(",", ""), Number);
 			const bestVam = Js.objMap(bestVam_str, Number);
 			if (bestTime != segmentInfo.best.time || bestSpeed != segmentInfo.best.speed || bestHeartRate != segmentInfo.best.heartRate || bestPower != segmentInfo.best.power || bestVam | segmentInfo.best.vam) {
 				segmentInfo.best.time = bestTime;
@@ -900,7 +920,7 @@ window.addEventListener('load', () => {
 				"\n"+
 				".zbynek-strava-segment-info-filter { padding-top: 40px; padding-left: 20px; padding-right: 20px; }\n"+
 				".zbynek-strava-segment-info-filter > .enablers { width: 100%; }\n"+
-				".zbynek-strava-segment-info-filter > .enablers > .enabler { display: inline-block; width: 30%; }\n"+
+				".zbynek-strava-segment-info-filter > .enablers > .enabler { display: inline-block; width: 24%; }\n"+
 				".zbynek-strava-segment-info-filter > .row { width: 100%; display: none; }\n"+
 				".zbynek-strava-segment-info-filter > .row > .name { display: inline-block; width: 20%; }\n"+
 				".zbynek-strava-segment-info-filter > .row > .content { display: inline-block; width: 80%; }\n"+
@@ -1121,7 +1141,7 @@ window.addEventListener('load', () => {
 						this.dwrapper.evaluate("..//textarea", event.currentTarget, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.confirmHandler(),
 					exportDbFunc: () => this.exportDb(),
 					exportListFunc: () => this.exportList(),
-					donateUrl: "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+future+development.&currency_code=CAD&source=url",
+					donateUrl: this.donateUrl,
 				},
 				"pl$-"
 			);
@@ -1216,7 +1236,7 @@ window.addEventListener('load', () => {
 					try {
 						const segment = segmentFull.segment;
 						const preference = segmentFull.preference;
-						const elevationGainEl = this.dwrapper.templateElement(
+						const addedEls = this.dwrapper.templateElements(
 							""+
 								"<li id='zbynek-strava-segment-info-segment-elevation-gain'>"+
 								"<div class='stat'>"+
@@ -1224,106 +1244,72 @@ window.addEventListener('load', () => {
 								"<b class='stat-text'><pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></b>"+
 								"</span>"+
 								"</div>"+
-								"</li>",
-							{
-								elevationGain_str: segment.info.elevationGain?.toFixed(0),
-							},
-							'pl$-'
-						);
-						const levelEl = this.dwrapper.templateElement(
-							""+
+								"</li>"+
 								"<li id='zbynek-strava-segment-info-segment-level'>"+
 								"<div class='stat'>"+
 								"<span class='stat-subtext'>Level</span>"+
 								"<div class='zbynek-strava-segment-info-segment-value'><pl$-node name='levelSelect'></pl$-node></div>"+
 								"</span>"+
 								"</div>"+
-								"</li>",
-							{
-								levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
-									segmentFull.preference.level = value;
-									this.updatePreference(segmentFull);
-								}),
-							},
-							'pl$-'
-						);
-						const typeEl = this.dwrapper.templateElement(
-							""+
+								"</li>"+
 								"<li id='zbynek-strava-segment-info-segment-type'>"+
 								"<div class='stat'>"+
 								"<span class='stat-subtext'>Type</span>"+
 								"<div class='zbynek-strava-segment-info-segment-value'><pl$-node name='typeSelect'></pl$-node></div>"+
 								"</span>"+
 								"</div>"+
-								"</li>",
-							{
-								typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
-									segmentFull.preference.type = value;
-									this.updatePreference(segmentFull);
-								}),
-							},
-							'pl$-'
-						);
-						const protectEl = this.dwrapper.templateElement(
-							""+
+								"</li>"+
 								"<li id='zbynek-strava-segment-info-segment-type'>"+
 								"<div class='stat'>"+
 								"<span class='stat-subtext'>Protect</span>"+
 								"<div class='zbynek-strava-segment-info-segment-value'><input type='text' pl$-value='protectValue' pl$-onchange='updateProtect'></input></div>"+
 								"</span>"+
 								"</div>"+
-								"</li>",
-							{
-								protectValue: preference.protect,
-								updateProtect: (event) => {
-									segmentFull.preference.protect = Js.strEmptyToNull(event.target.value);
-									this.updatePreference(segmentFull);
-								},
-							},
-							'pl$-'
-						);
-						const exportEl = this.dwrapper.templateElement(
-							""+
+								"</li>"+
 								"<li id='zbynek-strava-segment-info-segment-export'>"+
 								"<div class='stat'>"+
 								"<span class='stat-subtext'>Export</span>"+
 								"<b class='stat-text'><a pl$-onclick='exportFunc'>Export</a></b>"+
 								"</span>"+
 								"</div>"+
-								"</li>",
-							{
-								exportFunc: () => { this.exportSegmentRow(segmentId); },
-							},
-							'pl$-'
-						);
-						const donateEl = this.dwrapper.templateElement(
-							""+
+								"</li>"+
 								"<li id='zbynek-strava-segment-info-segment-donate'>"+
 								"<div class='stat'>"+
 								"<span class='stat-subtext'>Zbynek Strava Donate</span>"+
-								"<b class='stat-text'><a pl$-href='donateUrl' target='_blank' title='Support further development by donating to project'>Donate to development</a></b>"+
+								"<b class='stat-text'><a pl$-href='donateUrl' target='_blank' title='Support further development by donating to project'>Donate</a></b>"+
 								"</span>"+
 								"</div>"+
 								"</li>",
 							{
-								donateUrl: "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+future+development.&currency_code=CAD&source=url",
+								elevationGain_str: segment.info.elevationGain?.toFixed(0),
+								levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
+									segmentFull.preference.level = value;
+									this.updatePreference(segmentFull);
+								}),
+								typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
+									segmentFull.preference.type = value;
+									this.updatePreference(segmentFull);
+								}),
+								protectValue: preference.protect,
+								updateProtect: (event) => {
+									segmentFull.preference.protect = Js.strEmptyToNull(event.target.value);
+									this.updatePreference(segmentFull);
+								},
+								exportFunc: () => { this.exportSegmentRow(segmentId); },
+								donateUrl: this.donateUrl,
 							},
 							'pl$-'
 						);
 
-
 						const elevationDifferenceEl = this.dwrapper.needXpathNode("//ul[contains(concat(' ', @class, ' '), ' inline-stats ')]/li[.//span[text() = 'Elev Difference']]", this.dwrapper.doc);
-						this.dwrapper.removeXpath("./span[@id='zbynek-strava-segment-info-segment-elevation-gain']", this.dwrapper.doc);
-						this.dwrapper.removeXpath("./span[@id='zbynek-strava-segment-info-segment-level']", this.dwrapper.doc);
-						this.dwrapper.removeXpath("./span[@id='zbynek-strava-segment-info-segment-type']", this.dwrapper.doc);
-						this.dwrapper.removeXpath("./span[@id='zbynek-strava-segment-info-segment-export']", this.dwrapper.doc);
-						this.dwrapper.removeXpath("./span[@id='zbynek-strava-segment-info-segment-donate']", this.dwrapper.doc);
-						this.dwrapper.insertAfter(elevationDifferenceEl, elevationGainEl);
-						this.dwrapper.insertAfter(elevationGainEl, levelEl);
-						this.dwrapper.insertAfter(levelEl, typeEl);
-						this.dwrapper.insertAfter(typeEl, protectEl);
-						this.dwrapper.insertAfter(protectEl, exportEl);
-						this.dwrapper.insertAfter(exportEl, donateEl);
+						[
+							"./span[@id='zbynek-strava-segment-info-segment-elevation-gain']",
+							"./span[@id='zbynek-strava-segment-info-segment-level']",
+							"./span[@id='zbynek-strava-segment-info-segment-type']",
+							"./span[@id='zbynek-strava-segment-info-segment-export']",
+							"./span[@id='zbynek-strava-segment-info-segment-donate']",
+						].forEach((xpath) => this.dwrapper.removeXpath(xpath, this.dwrapper.doc));
+						this.dwrapper.insertMultiAfter(addedEls, elevationDifferenceEl);
 					}
 					catch (err) {
 						GM_log("Failed processing segment: "+segmentId, err);
@@ -1348,12 +1334,18 @@ window.addEventListener('load', () => {
 	 */
 	class ZbynekStravaSegmentInfoActivityUi extends ZbynekStravaSegmentInfoUiBase
 	{
+		filterEl = null;
+
+		filterEnabled = false;
+		batchUpdateEnabled = false;
+		filterFunction = () => true;
+
 		constructor(ajaxService, segmentInfoCache, segmentPreferenceDb, documentWrapper)
 		{
 			super(ajaxService, segmentInfoCache, segmentPreferenceDb, documentWrapper);
 		}
 
-		updateSegmentUi()
+		enrichSegments()
 		{
 			let counter = 0;
 			let processedCounter = 0;
@@ -1372,46 +1364,29 @@ window.addEventListener('load', () => {
 						try {
 							const segment = segmentFull.segment;
 							const preference = segmentFull.preference;
-							const gradeEl = this.dwrapper.templateElement(
-								"<span id='zbynek-strava-segment-info-activity-effort-avgGrade'> <pl$-text name='avgGrade_str'></pl$-text><abbr class='unit' title='percent'>%</abbr></span>",
+							const statsEls = this.dwrapper.templateElements(
+								""+
+									"<span id='zbynek-strava-segment-info-activity-effort-avgGrade'> <pl$-text name='avgGrade_str'></pl$-text><abbr class='unit' title='percent'>%</abbr></span>"+
+									"<span id='zbynek-strava-segment-info-activity-effort-elevationGain'>gain: <pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></span>"+
+									"<span id='zbynek-strava-segment-info-activity-effort-bestPower'>best: <pl$-text name='bestPower_str'></pl$-text><abbr class='unit' title='watts'>W</abbr></span>",
 								{
 									avgGrade_str: segment.info.avgGrade?.toFixed(1),
-								},
-								'pl$-'
-							);
-							const elevationGainEl = this.dwrapper.templateElement(
-								"<span id='zbynek-strava-segment-info-activity-effort-elevationGain'>gain: <pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></span>",
-								{
 									elevationGain_str: segment.info.elevationGain?.toFixed(0),
-								},
-								'pl$-'
-							);
-							const bestPowerEl = this.dwrapper.templateElement(
-								"<span id='zbynek-strava-segment-info-activity-effort-bestPower'>best: <pl$-text name='bestPower_str'></pl$-text><abbr class='unit' title='watts'>W</abbr></span>",
-								{
 									bestPower_str: segment.best?.power?.toFixed(0),
 								},
 								'pl$-'
 							);
-							const levelEl = this.dwrapper.templateElement(
+							const updatesEls = this.dwrapper.templateElements(
 								""+
-									"<td id='zbynek-strava-segment-info-activity-effort-type'>"+
+									"<td id='zbynek-strava-segment-info-activity-effort-updates'>"+
 									"<pl$-node name='levelSelect'></pl$-node>"+
+									"<pl$-node name='typeSelect'></pl$-node>"+
 									"</td>",
 								{
 									levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
 										preference.level = value;
 										this.updatePreference(segmentFull);
 									}),
-								},
-								'pl$-'
-							);
-							const typeEl = this.dwrapper.templateElement(
-								""+
-									"<td id='zbynek-strava-segment-info-activity-effort-type'>"+
-									"<pl$-node name='typeSelect'></pl$-node>"+
-									"</td>",
-								{
 									typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
 										preference.type = value;
 										this.updatePreference(segmentFull);
@@ -1419,19 +1394,19 @@ window.addEventListener('load', () => {
 								},
 								'pl$-'
 							);
-							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-avgGrade']", effortRow);
-							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-elevationGain']", effortRow);
-							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-bestPower']", effortRow);
-							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-level']", effortRow);
-							this.dwrapper.removeXpath(".//span[@id='zbynek-strava-segment-info-activity-effort-type']", effortRow);
+							[
+								".//span[@id='zbynek-strava-segment-info-activity-effort-avgGrade']",
+								".//span[@id='zbynek-strava-segment-info-activity-effort-elevationGain']",
+								".//span[@id='zbynek-strava-segment-info-activity-effort-bestPower']",
+								".//td[@id='zbynek-strava-segment-info-activity-effort-updates']",
+							].forEach((xpath) => this.dwrapper.removeXpath(xpath, effortRow));
 							const origAvgGradeEl = this.dwrapper.needXpathNode(".//span[@title = 'Average grade']", effortRow);
 							const visibilityEl = this.dwrapper.needXpathNode(".//td[.//button[contains(concat(' ', @class, ' '), 'toggle-effort-visibility')]]", effortRow);
-							origAvgGradeEl.parentElement.appendChild(gradeEl);
-							origAvgGradeEl.parentElement.appendChild(elevationGainEl);
-							origAvgGradeEl.parentElement.appendChild(bestPowerEl);
-							visibilityEl.parentElement.insertBefore(levelEl, visibilityEl);
-							visibilityEl.parentElement.insertBefore(typeEl, visibilityEl);
+							this.dwrapper.insertMultiAfter(statsEls, origAvgGradeEl);
+							this.dwrapper.insertMultiBefore(updatesEls, visibilityEl);
 							this.dwrapper.setVisible(origAvgGradeEl, false);
+							if (this.dwrapper.setVisible(effortRow, this.filterFunction(preference, segment), "table-row"))
+								++processedCounter;
 						}
 						catch (err) {
 							GM_log("Failed processing segment: "+segmentFull.segment.info.id, err);
@@ -1442,9 +1417,75 @@ window.addEventListener('load', () => {
 			GM_log("Segments processed "+counter);
 		}
 
+		refreshContent()
+		{
+			if (this.filterEnabled) {
+				try {
+					if (!(this.filterFunction = eval(this.dwrapper.needXpathNode(".//div[@id='filter']//textarea").value, this.filterEl))) {
+						throw new Error("Empty function provided");
+					}
+				}
+				catch (error) {
+					alert("Failed to compile filter function: "+error);
+				}
+			}
+			else {
+				this.filterFunction = () => true;
+			}
+			this.enrichSegments();
+		}
+
+		runBatchUpdate()
+		{
+			let batchFunction;
+			try {
+				if (!(batchFunction = eval(this.dwrapper.needXpathNode(".//div[@id='batchUpdate']//textarea").value, this.filterEl)))
+					throw new Error("Empty function provided");
+			}
+			catch (error) {
+				alert("Failed to compile batch update function: "+error);
+				return;
+			}
+			try {
+				this.listVisibleSegments().forEach((segmentRow) => {
+					const segmentFull = this.dwrapper.needXpathNode(".//span[@id = 'zbynek-strava-segment-info-segment']", segmentRow).segmentfull;
+					const newPreference = batchFunction(segmentFull.preference, segmentFull.segment);
+					Object.assign(segmentFull.preference, newPreference);
+					this.updatePreference(segmentFull);
+				});
+			}
+			catch (error) {
+				alert("Failed to execute batch update: "+error);
+				return;
+			}
+			this.enrichSegments();
+		}
+
 		initializeUi()
 		{
-			this.updateSegmentUi();
+			const segmentFooterEl = this.dwrapper.needXpathNode("//*[@id = 'segments']/footer", this.dwrapper.doc);
+			this.filterEl = this.dwrapper.templateElement(
+				""+
+					"<div class='zbynek-strava-segment-info-filter'>\n"+
+					"	<div class='enablers'>\n"+
+					"		<span class='enabler'>JS Filter <input type='checkbox' pl$-onchange='toggleJsFilter'></input></span>\n"+
+					"		<span class='enabler'>Batch Update<input type='checkbox' pl$-onchange='toggleBatchUpdate'></input></span>\n"+
+					"		<span class='enabler'><input type='button' value='Update' pl$-onclick='refreshFunc'></input></span>\n"+
+					"		<span class='enabler'><a pl$-href='donateUrl' target='_blank' title='Support further development by donating to project'>Donate</a></span>\n"+
+					"	</div>\n"+
+					"	<div class='row' id='filter'><span class='name' title='JsFilter by JavaScript function'>JS Filter</span><span class='content'><textarea rows='10' class='zbynek-strava-max-width'></textarea></span></div>\n"+
+					"	<div class='row' id='batchUpdate'><span class='name' title='Batch update by JavaScript function'><div>JS Batch Update</div><div><input type='button' value='Execute' pl$-onclick='runUpdateFunc'></input></div></span><span class='content'><textarea rows='10' class='zbynek-strava-max-width'></textarea></span></div>\n"+
+					"</div>",
+				{
+					donateUrl: this.donateUrl,
+					toggleJsFilter: (event) => this.filterEnabled = this.dwrapper.setVisible(this.dwrapper.needXpathNode("../../../div[@id = 'filter']", event.target), event.target.checked),
+					toggleBatchUpdate: (event) => this.batchUpdateEnabled = this.dwrapper.setVisible(this.dwrapper.needXpathNode("../../../div[@id = 'batchUpdate']", event.target), event.target.checked),
+					refreshFunc: (event) => this.refreshContent(),
+					runUpdateFunc: (event) => this.runBatchUpdate(),
+				},
+				"pl$-"
+			);
+			segmentFooterEl.appendChild(this.filterEl);
 		}
 
 		init()
@@ -1472,7 +1513,7 @@ window.addEventListener('load', () => {
 		)
 			.init();
 	}
-	else if (/^\/activities\/\w+(\/?|\/overview)$/.test(window.location.pathname)) {
+	else if (/^\/activities\/\w+(\/?|\/overview|\/segments\/\w+\/?)$/.test(window.location.pathname)) {
 		new ZbynekStravaSegmentInfoActivityUi(
 			new GmAjaxService(),
 			new GlobalDbStorageCache(window.localStorage, "ZbynekStravaSegmentInfo.segmentInfoCache", 1, 10*86400*1000),
