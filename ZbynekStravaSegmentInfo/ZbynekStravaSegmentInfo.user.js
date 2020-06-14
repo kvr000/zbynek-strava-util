@@ -2,7 +2,7 @@
 // @id          https://github.com/kvr000/zbynek-strava-util/ZbynekStravaSegmentInfo/
 // @name        Zbynek Strava Segment Info
 // @namespace   https://github.com/kvr000/zbynek-strava-util/
-// @description Strava - Enhance segment matcher with detailed segment information.
+// @description Strava - Enhance segment list with detailed segment information, applies to activity page, segment you're looking for page and segment detail page.
 // @author      Zbynek Vyskovsky, kvr000@gmail.com https://github.com/kvr000/
 // @copyright   2020+, Zbynek Vyskovsky,kvr000@gmail.com (https://github.com/kvr000/zbynek-strava-util/)
 // @license     Apache-2.0
@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     0.0.8
+// @version     0.0.9
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -93,6 +93,11 @@ window.addEventListener('load', () => {
 		static strEmptyToNull(str)
 		{
 			return str === "" ? null : str;
+		}
+
+		static strValueToNull(nullvalue, str)
+		{
+			return str === nullvalue ? null : str;
 		}
 
 		static strNullToEmpty(str)
@@ -190,10 +195,7 @@ window.addEventListener('load', () => {
 
 		removeXpath(xpath, start)
 		{
-			let node;
-			if ((node = this.doc.evaluate(xpath, start, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue) != null) {
-				node.remove();
-			}
+			this.listXpath(xpath, start).forEach((node) => node.remove());
 		}
 
 		insertAfter(inserted, before)
@@ -210,6 +212,18 @@ window.addEventListener('load', () => {
 		{
 			let last = before;
 			inserted.forEach((e) => { this.insertAfter(e, before); before = e; });
+		}
+
+		appendMulti(inserted, parentElement)
+		{
+			inserted.forEach((e) => parentElement.appendChild(e));
+		}
+
+		childElementPosition(child)
+		{
+			let i = 0;
+			for (let left = child; (left = left.previousElementSibling) != null; ++i) ;
+			return i;
 		}
 
 		createElementEx(name, attrs, children)
@@ -240,7 +254,10 @@ window.addEventListener('load', () => {
 		createSelect(attrs, options, current, listener)
 		{
 			const optionsElements = [];
-			$.each(options, (k, v) => optionsElements.push(this.createElementWithText("option", { value: k }, v)));
+			$.each(options, (k, v) => optionsElements.push(v instanceof Node ?
+			       	this.createElementEx("option", { value: k }, [ v ]) :
+				this.createElementWithText("option", { value: k }, v)
+			));
 			const element = this.createElementEx("select", attrs, optionsElements);
 			element.value = current == null && attrs.emptyIsNull ? "" : String(current);
 			element.updateListener = listener;
@@ -261,7 +278,10 @@ window.addEventListener('load', () => {
 		{
 			const elements = $.parseHTML(html);
 			for (let i = 0; i < elements.length; ++i) {
-				for (let current = elements[i]; current != null; ) {
+				let current = elements[i];
+				if (!(current instanceof Element))
+					continue;
+				while (current != null) {
 					if (current.localName.startsWith(prefix)) {
 						const command = current.localName.substring(prefix.length);
 						switch (command) {
@@ -313,7 +333,7 @@ window.addEventListener('load', () => {
 								const conditionName = Js.nullElseThrow(current.getAttribute("condition"), () => new Error("Cannot find condition attribute in element: "+current));
 								const condition = Js.objGetElseThrow(placeholders, conditionName, () => new Error("Cannot find placeholder: "+conditionName));
 								const chosen = (command == 'ifrun' ? condition(current, this) : condition) ? trueEl : falseEl;
-								let restart = chosen.firstChild;
+								let restart = chosen.firstElementChild;
 								while (chosen.firstChild) {
 									const next = chosen.firstChild;
 									current.parentNode.insertBefore(next, current);
@@ -731,7 +751,7 @@ window.addEventListener('load', () => {
 			str = rest.toFixed(0)+":"+str.padStart(5, "0");
 			return str;
 		}
-		
+
 		formatLevel(level)
 		{
 			return ZbynekStravaSegmentInfoMatcherUi.LEVELS[Js.strNullToEmpty(Js.objMap(level, String))];
@@ -768,9 +788,11 @@ window.addEventListener('load', () => {
 			const qomDate_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue);
 			const bestTime_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
 			const bestSpeed_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'km/h']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
-			const bestBpm_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'bpm']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
-			const bestPower_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'W']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
-			const bestVam_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/preceding-sibling::td[1]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+			const bestBpm_str = Js.strEmptyToNull(Js.strValueToNull("-", root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'bpm']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue));
+			const bestPowerColumn = Js.objMap(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/thead/tr/th[text() = 'Power']", root, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue, (node) => this.dwrapper.childElementPosition(node));
+			const bestPower_str = Js.objMap(bestPowerColumn, (column) => Js.strEmptyToNull(Js.strValueToNull("-", root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[position() = "+(column+1)+"]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue)));
+			const bestVamColumn = Js.objMap(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/thead/tr/th[text() = 'VAM']", root, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue, (node) => this.dwrapper.childElementPosition(node));
+			const bestVam_str = Js.objMap(bestVamColumn, (column) => Js.strEmptyToNull(Js.strValueToNull("-", root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[position() = "+(column+1)+"]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue)));
 
 			const prTime = this.convertTimeStr(prTime_str);
 			const prDate = Js.objMap(prDate_str, (str) => Date.parse(str+" UTC"));
@@ -802,9 +824,9 @@ window.addEventListener('load', () => {
 			const bestTime = this.convertTimeStr(bestTime_str);
 			const bestSpeed = Js.objMap(bestSpeed_str, Number);
 			const bestHeartRate = Js.objMap(bestBpm_str, Number);
-			const bestPower = Js.objMap(bestPower_str?.replace(",", ""), Number);
-			const bestVam = Js.objMap(bestVam_str, Number);
-			if (bestTime != segmentInfo.best.time || bestSpeed != segmentInfo.best.speed || bestHeartRate != segmentInfo.best.heartRate || bestPower != segmentInfo.best.power || bestVam | segmentInfo.best.vam) {
+			const bestPower = Js.objMap(bestPower_str, s => Number(s.replace(",", "")));
+			const bestVam = Js.objMap(bestVam_str, s => Number(s.replace(",", "")));
+			if (bestTime != segmentInfo.best.time || bestSpeed != segmentInfo.best.speed || bestHeartRate != segmentInfo.best.heartRate || bestPower != segmentInfo.best.power || bestVam != segmentInfo.best.vam) {
 				segmentInfo.best.time = bestTime;
 				segmentInfo.best.speed = bestSpeed;
 				segmentInfo.best.heartRate = bestHeartRate;
@@ -844,7 +866,7 @@ window.addEventListener('load', () => {
 
 							const route = JSON.parse(responses[1]);
 							const distance = Js.objMap(distance_str, Number);
-							const elevationGain = route.altitude.reduce((total, current, index, array) => total+(index == 0 ? 0 : Math.max(0, current-array[index-1])), 0);
+							const elevationGain = Js.objMap(route, route => route.altitude.reduce((total, current, index, array) => total+(index == 0 ? 0 : Math.max(0, current-array[index-1])), 0));
 							const elevationDiff = Js.nullElseGet(route.altitude.length > 0 ? route.altitude[route.altitude.length-1]-route.altitude[0] : null, () => Js.objMap(elevationDiff_str, Number));
 							const avgGradeStrava = Js.objMap(avgGrade_str, Number);
 							const avgGrade = distance != null && elevationDiff != null ? elevationDiff/(distance*10) : avgGradeStrava;
@@ -978,7 +1000,7 @@ window.addEventListener('load', () => {
 									"<span id='zbynek-strava-segment-info-segment' class='zbynek-strava-segment-info-segment' pl$-segmentfull='segmentFull' pl$-onchange='emptyFunc'>"+
 									"<span class='distance'><pl$-text name='distance_str'></pl$-text>km</span>"+
 									"<span class='grade'><pl$-text name='avgGrade_str'></pl$-text>%</span>"+
-									"<span class='elevationGain'><pl$-text name='elevationGain_str'></pl$-text>m</span>"+
+									"<span class='elevationGain'><pl$-if condition='elevationGain_str'><true><pl$-text name='elevationGain_str'></pl$-text>m</true><false>unknown</false></pl$-if></span>"+
 									"<span class='prTime'><pl$-if condition='pr_link'><true><a pl$-href='pr_link' target='_blank'><pl$-textrun name='pr_time_str'></pl$-textrun>s</a></true><false></false></pl$-if></span>"+
 									"<span class='prKqomIndicator'><pl$-text name='pr_isKqom_str'></pl$-text></span>"+
 									"<span class='kqomTime'><pl$-if condition='kqom_link'><true><a pl$-href='kqom_link' target='_blank'><pl$-textrun name='kqom_time_str'></pl$-textrun>s</a></true><false></false></pl$-if></span>"+
@@ -991,16 +1013,16 @@ window.addEventListener('load', () => {
 								{
 									emptyFunc: () => {},
 									segmentFull: segmentFull,
-									distance_str: segment.info.distance?.toFixed(2),
-									avgGrade_str: segment.info.avgGrade?.toFixed(1),
-									elevationGain_str: segment.info.elevationGain?.toFixed(0),
+									distance_str: Js.objMap(segment.info.distance, n => n.toFixed(2)),
+									avgGrade_str: Js.objMap(segment.info.avgGrade, n => n.toFixed(1)),
+									elevationGain_str: Js.objMap(segment.info.elevationGain, n => n.toFixed(0)),
 									pr_link: Js.nullElse(segment.pr.link, ""),
 									pr_time_str: () => this.formatTime(segment.pr.time),
 									pr_isKqom_str: segment.isKqom ? "\uD83D\uDC51" : "",
 									kqom_link: segment.kom.link,
 									kqom_time_str: () => this.formatTime(segment.best.time),
-									kqom_speed_str: () => segment.best.speed?.toFixed(1),
-									kqom_power_str: () => segment.best.power?.toFixed(0),
+									kqom_speed_str: () => Js.objMap(segment.best.speed, n => n.toFixed(1)),
+									kqom_power_str: () => Js.objMap(segment.best.power, n => n.toFixed(0)),
 									levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
 										segmentFull.preference.level = value;
 										this.updatePreference(segmentFull);
@@ -1281,7 +1303,7 @@ window.addEventListener('load', () => {
 								"</div>"+
 								"</li>",
 							{
-								elevationGain_str: segment.info.elevationGain?.toFixed(0),
+								elevationGain_str: Js.objMap(segment.info.elevationGain, n => n.toFixed(0)),
 								levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
 									segmentFull.preference.level = value;
 									this.updatePreference(segmentFull);
@@ -1366,13 +1388,13 @@ window.addEventListener('load', () => {
 							const preference = segmentFull.preference;
 							const statsEls = this.dwrapper.templateElements(
 								""+
-									"<span id='zbynek-strava-segment-info-activity-effort-avgGrade'> <pl$-text name='avgGrade_str'></pl$-text><abbr class='unit' title='percent'>%</abbr></span>"+
-									"<span id='zbynek-strava-segment-info-activity-effort-elevationGain'>gain: <pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></span>"+
-									"<span id='zbynek-strava-segment-info-activity-effort-bestPower'>best: <pl$-text name='bestPower_str'></pl$-text><abbr class='unit' title='watts'>W</abbr></span>",
+									"<span id='zbynek-strava-segment-info-activity-effort-avgGrade'> <pl$-if condition='avgGrade_str'><true><pl$-text name='avgGrade_str'></pl$-text><abbr class='unit' title='percent'>%</abbr></true><false>unknown</false></pl$-if></span>"+
+									"<span id='zbynek-strava-segment-info-activity-effort-elevationGain'>gain: <pl$-if condition='elevationGain_str'><true><pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></true><false>unknown</false></pl$-if></span>"+
+									"<span id='zbynek-strava-segment-info-activity-effort-bestPower'>best: <pl$-if condition='bestPower_str'><true><pl$-text name='bestPower_str'></pl$-text><abbr class='unit' title='watts'>W</abbr></true><false>unknown</false></pl$-if></span>",
 								{
-									avgGrade_str: segment.info.avgGrade?.toFixed(1),
-									elevationGain_str: segment.info.elevationGain?.toFixed(0),
-									bestPower_str: segment.best?.power?.toFixed(0),
+									avgGrade_str: Js.objMap(segment.info.avgGrade, n => n.toFixed(1)),
+									elevationGain_str: Js.objMap(segment.info.elevationGain, n => n.toFixed(0)),
+									bestPower_str: Js.objMap(segment.best?.power, n => n.toFixed(0)),
 								},
 								'pl$-'
 							);
