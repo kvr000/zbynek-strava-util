@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaStats/ZbynekStravaStats.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     0.0.2
+// @version     1.0.0
 // @include     https://www.strava.com/athletes/*
 // @include     http://www.strava.com/athletes/*
 // @include     https://strava.com/athletes/*
@@ -435,7 +435,7 @@ window.addEventListener('load', () => {
 					{}
 				)
 			)
-				.sort((a, b) => b.distance-a.distance)
+				.sort((a, b) => b[1].distance-a[1].distance)
 				.reduce(
 					(obj, [k,v]) => ({
 						...obj,
