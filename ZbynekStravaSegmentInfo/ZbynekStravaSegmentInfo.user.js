@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.0
+// @version     1.0.2
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -673,7 +673,9 @@ window.addEventListener('load', () => {
 			11: "Dangerous",
 			12: "Short",
 			13: "Flagged",
-			14: "Wrong"
+			14: "Rebuilt",
+			15: "Wrong",
+			16: "Uninteresting",
 		};
 		static CSV_ROW_HEADER = {
 			name: "Name",
@@ -1428,6 +1430,7 @@ window.addEventListener('load', () => {
 							[
 								".//span[@id='zbynek-strava-segment-info-activity-effort-avgGrade']",
 								".//span[@id='zbynek-strava-segment-info-activity-effort-elevationGain']",
+								".//span[@id='zbynek-strava-segment-info-activity-effort-pr']",
 								".//span[@id='zbynek-strava-segment-info-activity-effort-best']",
 								".//td[@id='zbynek-strava-segment-info-activity-effort-updates']",
 							].forEach((xpath) => this.dwrapper.removeXpath(xpath, effortRow));
@@ -1446,6 +1449,12 @@ window.addEventListener('load', () => {
 				if (++counter >= 1000000) break;
 			}
 			GM_log("Segments processed "+counter);
+		}
+
+		listVisibleSegments()
+		{
+			const effortRows = this.dwrapper.listXpath("//table[contains(concat(' ', @class, ' '), ' segments ') or contains(concat(' ', @class, ' '), ' hidden-segments ')]//tr[@data-segment-effort-id]", this.dwrapper.doc);
+			return effortRows.map((effortRow) => pageView.segmentEfforts().getEffort(effortRow.getAttribute("data-segment-effort-id")).attributes.segment_id);
 		}
 
 		refreshContent()
@@ -1477,19 +1486,28 @@ window.addEventListener('load', () => {
 				alert("Failed to compile batch update function: "+error);
 				return;
 			}
-			try {
-				this.listVisibleSegments().forEach((segmentRow) => {
-					const segmentFull = this.dwrapper.needXpathNode(".//span[@id = 'zbynek-strava-segment-info-segment']", segmentRow).segmentfull;
-					const newPreference = batchFunction(segmentFull.preference, segmentFull.segment);
-					Object.assign(segmentFull.preference, newPreference);
-					this.updatePreference(segmentFull);
+			let failed = 0;
+			Promise.allSettled(this.listVisibleSegments().map((segmentId) => {
+				this.fetchSegmentFull(segmentId)
+					.then((segmentFull) => {
+						let newPreference;
+						try {
+							newPreference = batchFunction(segmentFull.preference, segmentFull.segment);
+						}
+						catch (error) {
+							if (failed++ == 0) {
+								alert("Failed to execute batch update: "+error);
+							}
+							throw error;
+						}
+						Object.assign(segmentFull.preference, newPreference);
+						this.updatePreference(segmentFull);
+					});
+			}))
+				.then((results) => {
+					results.filter((result) => result.status == 'rejected').forEach((result) => console.log(result));
+					this.enrichSegments();
 				});
-			}
-			catch (error) {
-				alert("Failed to execute batch update: "+error);
-				return;
-			}
-			this.enrichSegments();
 		}
 
 		initializeUi()
