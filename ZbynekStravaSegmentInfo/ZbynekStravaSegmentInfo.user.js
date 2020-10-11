@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.2
+// @version     1.0.4
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -657,12 +657,13 @@ window.addEventListener('load', () => {
 		// TODO: Some split into strict UI and general support classes would be nice, for now simple split from original single purpose UI
 
 		/* constants */
-		static PR_MATCH = /^\s*\u21b5?\s*((\d+:)*\d+)\s*\u21b5?\s*$/;
+		static PR_MATCH = /^\s*\u21b5?\s*-?\s*((\d+:)*\d+)\s*\u21b5?\s*$/;
 		static TIME_MATCH = /^((((\d+)d\s*)?(\d+):)?(\d+):)?(\d+)$/;
+		static TIME_ABBR_MATCH = /^((\d+:)*\d+)(|s)(<abbr.*)?$/;
 		static LEVELS = {
 			"": "",
-			1: "L1 (Relax)",
-			2: "L2 (Always)",
+			1: "L1 (Always)",
+			2: "L2 (Relax)",
 			3: "L3 (Easy)",
 			4: "L4 (Medium)",
 			5: "L5 (Difficult)",
@@ -761,7 +762,7 @@ window.addEventListener('load', () => {
 
 		formatLevel(level)
 		{
-			return ZbynekStravaSegmentInfoMatcherUi.LEVELS[Js.strNullToEmpty(Js.objMap(level, String))];
+			return ZbynekStravaSegmentInfoUiBase.LEVELS[Js.strNullToEmpty(Js.objMap(level, String))];
 		}
 
 		writeCsvSegment(csvFormatter, segmentFull)
@@ -784,15 +785,35 @@ window.addEventListener('load', () => {
 		{
 			let updated = false;
 
-			const prTime_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/strong[contains(text(), 'All-Time PR')]/following-sibling::text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoMatcherUi.PR_MATCH)?.[1]);
-			const prLink = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue);
-			const prDate_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'pr_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue);
-			const komTime_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/strong[contains(text(), 'KOM')]/following-sibling::text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoMatcherUi.PR_MATCH)?.[1]);
-			const komLink = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue);
-			const komDate_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'kom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue);
-			const qomTime_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/strong[contains(text(), 'QOM')]/following-sibling::text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoMatcherUi.PR_MATCH)?.[1]);
-			const qomLink = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue);
-			const qomDate_str = Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class, ' '), ' result ') and @data-tracking-element = 'qom_effort']/span[contains(concat(' ', @class, ' '), ' timestamp ')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue);
+			const bestDetails = [ JSON.parse(root.evaluate("//div[@data-react-class = 'SegmentDetailsSideBar']/@data-react-props", root, null, XPathResult.STRING_TYPE).stringValue).sideBarProps]
+				.flatMap(a => [ a.fastestTimes, { pr: a.viewingAthlete } ])
+				.flatMap(a => Object.values(a))
+				.filter(rec => rec.stats)
+				.reduce((result, rec) => {
+					return {
+						...result,
+						...rec.stats.reduce((obj, e) => { return /^(KOM|QOM|All-Time PR)$/.test(e.label) ? { ...obj, [e.label]: { time_str: e.value?.match(ZbynekStravaSegmentInfoUiBase.TIME_ABBR_MATCH)?.[1], rec: rec } } : obj }, {}),
+					}
+				}, {});
+
+			const prTime_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-')]//*[div[text() = 'All-Time PR']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-effort-')]/text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoUiBase.PR_MATCH)?.[1]),
+				() => Js.strEmptyToNull(bestDetails['All-Time PR']?.time_str));
+			const prLink = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'All-Time PR']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue),
+				() => Js.objMap(bestDetails['All-Time PR']?.rec, (rec) => rec.activityId ? "/activities/"+rec.activityId+"#"+rec.segmentEffortId : null));
+			const prDate_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'All-Time PR']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue),
+				() => bestDetails['All-Time PR']?.rec?.date);;
+			const komTime_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-')]//*[div[text() = 'KOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-effort-')]/text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoUiBase.PR_MATCH)?.[1]),
+				() => Js.strEmptyToNull(bestDetails['KOM']?.time_str));
+			const komLink = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'KOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue),
+				() => Js.objMap(bestDetails['KOM']?.rec, (rec) => rec.activityId ? "/activities/"+rec.activityId+"#"+rec.segmentEffortId : null));
+			const komDate_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'KOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue),
+				() => bestDetails['KOM']?.rec?.date);;
+			const qomTime_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-')]//*[div[text() = 'QOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-effort-')]/text()", root, null, XPathResult.STRING_TYPE).stringValue.match(ZbynekStravaSegmentInfoUiBase.PR_MATCH)?.[1]),
+				() => Js.strEmptyToNull(bestDetails['QOM']?.time_str));
+			const qomLink = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'QOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/@href", root, null, XPathResult.STRING_TYPE).stringValue),
+				() => Js.objMap(bestDetails['QOM']?.rec, (rec) => rec.activityId ? "/activities/"+rec.activityId+"#"+rec.segmentEffortId : null));
+			const qomDate_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'QOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue),
+				() => bestDetails['QOM']?.rec?.date);;
 			const bestTime_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
 			const bestSpeed_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'km/h']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
 			const bestBpm_str = Js.strEmptyToNull(Js.regexValueToNull(/^\s*-\s*$/, root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'bpm']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue));
@@ -1034,7 +1055,7 @@ window.addEventListener('load', () => {
 										segmentFull.preference.level = value;
 										this.updatePreference(segmentFull);
 									}),
-									typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
+									typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", light: "Lgt", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
 										segmentFull.preference.type = value;
 										this.updatePreference(segmentFull);
 									}),
@@ -1315,7 +1336,7 @@ window.addEventListener('load', () => {
 									segmentFull.preference.level = value;
 									this.updatePreference(segmentFull);
 								}),
-								typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
+								typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", light: "Lgt", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
 									segmentFull.preference.type = value;
 									this.updatePreference(segmentFull);
 								}),
@@ -1420,7 +1441,7 @@ window.addEventListener('load', () => {
 										preference.level = value;
 										this.updatePreference(segmentFull);
 									}),
-									typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
+									typeSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, { "": "", road: "Rd", light: "Lgt", gravel: "Gr", mtb: "Mtb" }, preference.type, (value) => {
 										preference.type = value;
 										this.updatePreference(segmentFull);
 									}),
