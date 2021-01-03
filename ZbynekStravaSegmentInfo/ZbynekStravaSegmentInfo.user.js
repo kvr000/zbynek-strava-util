@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.4
+// @version     1.0.5
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -785,7 +785,9 @@ window.addEventListener('load', () => {
 		{
 			let updated = false;
 
-			const bestDetails = [ JSON.parse(root.evaluate("//div[@data-react-class = 'SegmentDetailsSideBar']/@data-react-props", root, null, XPathResult.STRING_TYPE).stringValue).sideBarProps]
+			const detailsContent = root.evaluate("//div[@data-react-class = 'SegmentDetailsSideBar']/@data-react-props", root, null, XPathResult.STRING_TYPE).stringValue;
+			const needsHazardWaiver = root.evaluate("//button[@id = 'hazard-waiver']/text()", root, null, XPathResult.STRING_TYPE).stringValue ? true : false;
+			const bestDetails = !detailsContent ? {} : [ JSON.parse(detailsContent).sideBarProps ]
 				.flatMap(a => [ a.fastestTimes, { pr: a.viewingAthlete } ])
 				.flatMap(a => Object.values(a))
 				.filter(rec => rec.stats)
@@ -866,6 +868,10 @@ window.addEventListener('load', () => {
 			const isKqom = prLink != null && (prLink == komLink || prLink == qomLink);
 			if (isKqom != segmentInfo.isKqom) {
 				segmentInfo.isKqom = isKqom;
+				updated = true;
+			}
+			if (needsHazardWaiver != segmentInfo.needsHazardWaiver) {
+				segmentInfo.needsHazardWaiver = needsHazardWaiver;
 				updated = true;
 			}
 
@@ -964,6 +970,7 @@ window.addEventListener('load', () => {
 				".zbynek-strava-segment-info-segment > .kqomTime { width: 9%; text-align: right; }\n"+
 				".zbynek-strava-segment-info-segment > .kqomSpeed { width: 15%; text-align: right; }\n"+
 				".zbynek-strava-segment-info-segment > .kqomPower { width: 10%; text-align: right; }\n"+
+				".zbynek-strava-segment-info-segment > .hazard { width: 34%; text-align: left; }\n"+
 				".zbynek-strava-segment-info-segment > .level { width: 10%; }\n"+
 				".zbynek-strava-segment-info-segment > .type { width: 10%; }\n"+
 				".zbynek-strava-segment-info-segment > .segmentLink { width: 4%; text-align: right; }\n"+
@@ -1031,15 +1038,21 @@ window.addEventListener('load', () => {
 									"<span class='elevationGain'><pl$-if condition='elevationGain_str'><true><pl$-text name='elevationGain_str'></pl$-text>m</true><false>unknown</false></pl$-if></span>"+
 									"<span class='prTime'><pl$-if condition='pr_link'><true><a pl$-href='pr_link' target='_blank'><pl$-textrun name='pr_time_str'></pl$-textrun>s</a></true><false></false></pl$-if></span>"+
 									"<span class='prKqomIndicator'><pl$-text name='pr_isKqom_str'></pl$-text></span>"+
-									"<span class='kqomTime'><pl$-if condition='kqom_link'><true><a pl$-href='kqom_link' target='_blank'><pl$-textrun name='kqom_time_str'></pl$-textrun>s</a></true><false></false></pl$-if></span>"+
-									"<span class='kqomSpeed'><pl$-ifrun condition='kqom_speed_str'><true><pl$-textrun name='kqom_speed_str'></pl$-textrun>km/h</true><false></false></pl$-if></span>"+
-									"<span class='kqomPower'><pl$-ifrun condition='kqom_power_str'><true><pl$-textrun name='kqom_power_str'></pl$-textrun>W</true><false></false></pl$-if></span>"+
+									"<pl$-if condition='needsHazardWaiver'><true>"+
+									"<span class='hazard'>Flagged, no data</span>"+
+									"</true><false>"+
+									"<span class='kqomTime'><pl$-if condition='kqom_time'><true><a pl$-href='kqom_link' target='_blank'><pl$-textrun name='kqom_time_str'></pl$-textrun>s</a></true><false></false></pl$-if></span>"+
+									"<span class='kqomSpeed'><pl$-if condition='kqom_speed'><true><pl$-textrun name='kqom_speed_str'></pl$-textrun>km/h</true><false></false></pl$-if></span>"+
+									"<span class='kqomPower'><pl$-if condition='kqom_power'><true><pl$-textrun name='kqom_power_str'></pl$-textrun>W</true><false></false></pl$-if></span>"+
+									"</false>"+
+									"</pl$-if>"+
 									"<span class='level'><pl$-node name='levelSelect'></pl$-node></span>"+
 									"<span class='type'><pl$-node name='typeSelect'></pl$-node></span>"+
 									"<span class='segmentLink'><a pl$-href='segmentLink' target='_blank'>\uD83D\uDD17</a></span>"+
 									"</span>",
 								{
 									emptyFunc: () => {},
+									needsHazardWaiver: segment.needsHazardWaiver,
 									segmentFull: segmentFull,
 									distance_str: Js.objMap(segment.info.distance, n => n.toFixed(2)),
 									avgGrade_str: Js.objMap(segment.info.avgGrade, n => n.toFixed(1)),
@@ -1048,8 +1061,11 @@ window.addEventListener('load', () => {
 									pr_time_str: () => this.formatTime(segment.pr.time),
 									pr_isKqom_str: segment.isKqom ? "\uD83D\uDC51" : "",
 									kqom_link: segment.kom.link,
+									kqom_time: segment.best.time,
 									kqom_time_str: () => this.formatTime(segment.best.time),
+									kqom_speed: segment.best.speed,
 									kqom_speed_str: () => Js.objMap(segment.best.speed, n => n.toFixed(1)),
+									kqom_power: segment.best.power,
 									kqom_power_str: () => Js.objMap(segment.best.power, n => n.toFixed(0)),
 									levelSelect: this.dwrapper.createSelect({ class: "zbynek-strava-inline-select", emptyIsNull: true }, ZbynekStravaSegmentInfoUiBase.LEVELS, preference.level, (value) => {
 										segmentFull.preference.level = value;
@@ -1418,15 +1434,19 @@ window.addEventListener('load', () => {
 								""+
 									"<span id='zbynek-strava-segment-info-activity-effort-avgGrade'> <pl$-if condition='avgGrade_str'><true><pl$-text name='avgGrade_str'></pl$-text><abbr class='unit' title='percent'>%</abbr></true><false>unknown</false></pl$-if></span>"+
 									"<span id='zbynek-strava-segment-info-activity-effort-elevationGain'>gain: <pl$-if condition='elevationGain_str'><true><pl$-text name='elevationGain_str'></pl$-text><abbr class='unit' title='meters'>m</abbr></true><false>unknown</false></pl$-if></span>"+
-									"<span id='zbynek-strava-segment-info-activity-effort-pr'><pl$-if condition='prTime_str'><true><pl$-text name='prTime_str'></pl$-text><abbr class='unit' title='s'>s</abbr></true><false>none</false></pl$-if></span>"+
-									"<span id='zbynek-strava-segment-info-activity-effort-best'><br/>best: <span id='time'><pl$-if condition='bestTime_str'><true><pl$-text name='bestTime_str'></pl$-text><abbr class='unit' title='s'>s</abbr></true><false>unknown</false></pl$-if></span> <span id='speed'><pl$-if condition='bestSpeed_str'><true><pl$-text name='bestSpeed_str'></pl$-text><abbr class='unit' title='km/h'>km/h</abbr></true><false>unknown</false></pl$-if></span> <span id='power'><pl$-if condition='bestPower_str'><true><pl$-text name='bestPower_str'></pl$-text><abbr class='unit' title='watts'>W</abbr></true><false>unknown</false></pl$-if></span></span>",
+									"<span id='zbynek-strava-segment-info-activity-effort-pr'><pl$-if condition='prTime'><true><pl$-textrun name='prTime_str'></pl$-textrun><abbr class='unit' title='s'>s</abbr></true><false>none</false></pl$-if></span>"+
+									"<span id='zbynek-strava-segment-info-activity-effort-best'><br/>best: <span id='time'><pl$-if condition='bestTime'><true><pl$-textrun name='bestTime_str'></pl$-textrun><abbr class='unit' title='s'>s</abbr></true><false>unknown</false></pl$-if></span> <span id='speed'><pl$-if condition='bestSpeed'><true><pl$-textrun name='bestSpeed_str'></pl$-textrun><abbr class='unit' title='km/h'>km/h</abbr></true><false>unknown</false></pl$-if></span> <span id='power'><pl$-if condition='bestPower'><true><pl$-textrun name='bestPower_str'></pl$-textrun><abbr class='unit' title='watts'>W</abbr></true><false>unknown</false></pl$-if></span></span>",
 								{
 									avgGrade_str: Js.objMap(segment.info.avgGrade, n => n.toFixed(1)),
 									elevationGain_str: Js.objMap(segment.info.elevationGain, n => n.toFixed(0)),
-									prTime_str: Js.objMap(segment.pr?.time, n => this.formatTime(n)),
-									bestPower_str: Js.objMap(segment.best?.power, n => n.toFixed(0)),
-									bestSpeed_str: Js.objMap(segment.best?.speed, n => n.toFixed(1)),
-									bestTime_str: Js.objMap(segment.best?.time, n => this.formatTime(n)),
+									prTime: segment.pr?.time,
+									prTime_str: () => Js.objMap(segment.pr?.time, n => this.formatTime(n)),
+									bestPower: segment.best?.power,
+									bestPower_str: () => Js.objMap(segment.best?.power, n => n.toFixed(0)),
+									bestSpeed: segment.best?.speed,
+									bestSpeed_str: () => Js.objMap(segment.best?.speed, n => n.toFixed(1)),
+									bestTime: segment.best?.time,
+									bestTime_str: () => Js.objMap(segment.best?.time, n => this.formatTime(n)),
 								},
 								'pl$-'
 							);
