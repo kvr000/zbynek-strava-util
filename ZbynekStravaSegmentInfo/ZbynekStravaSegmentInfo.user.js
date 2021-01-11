@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.5
+// @version     1.0.6
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -499,6 +499,13 @@ window.addEventListener('load', () => {
 		{
 			try {
 				this.cache = JSON.parse(this.storage.getItem(this.name));
+				const time = new Date().getTime();
+				Object.getOwnPropertyNames(this.cache).forEach((id) => {
+					const value = this.cache[id];
+					if (value.expire != null && time >= value.expire) {
+						delete this.cache[id];
+					}
+				});
 			}
 			catch (err) {
 			}
