@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.6
+// @version     1.1.0
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -33,7 +33,7 @@
 // ==/UserScript==
 /*jshint loopfunc:true */
 
-window.addEventListener('load', () => {
+(function() {
 	'use strict';
 	const $ = unsafeWindow.jQuery;
 
@@ -1623,6 +1623,6 @@ window.addEventListener('load', () => {
 		GM_log("Failed to match URL to known pattern, ignoring: "+window.location.pathname);
 	}
 
-}, false);
+})();
 
 // vim: set sw=8 ts=8 noet smarttab:

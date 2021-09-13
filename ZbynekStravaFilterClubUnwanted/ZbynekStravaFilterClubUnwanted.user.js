@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     0.0.1
+// @version     1.0.0
 // @grant       GM_addStyle
 // @include     https://www.strava.com/clubs/*/recent_activity
 // @include     http://www.strava.com/clubs/*/recent_activity
@@ -24,7 +24,7 @@
 
 /*jshint loopfunc:true */
 
-window.addEventListener('load', function() {
+(function() {
 	'use strict';
 	let $ = window.jQuery;
 
@@ -87,16 +87,17 @@ window.addEventListener('load', function() {
 
 	function processUnwantedAthletes()
 	{
-		let activities = listXpath(document, "//div[contains(concat(' ', @class, ' '), ' feed ')]//div[contains(concat(' ', @class, ' '), ' activity ') and contains(concat(' ', @class, ' '), ' feed-entry ')]", document);
+		let activities = listXpath(document, "//*[@data-react-class = 'Activity' or @data-react-class = 'GroupActivity']//*[./div[@data-testid = 'entry-header']]", document);
 		$.each(activities, function (i, activityEl) {
 			try {
+				let containerEl = document.evaluate("ancestor::div[contains(concat(' ', @class, ' '), ' react-card-container ')]", activityEl, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
 				let athleteId = document.evaluate(".//a[@id = 'zbynek-strava-club-filter-unwanted-hide']", activityEl, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.athleteId;
-					let hide = unwanted[athleteId];
+				let hide = unwanted[athleteId];
 				if (hide === true) {
-					activityEl.style.display = 'none';
+					containerEl.style.display = 'none';
 				}
 				else {
-					activityEl.style.display = 'block';
+					containerEl.style.display = 'block';
 				}
 			}
 			catch (err) {
@@ -131,17 +132,17 @@ window.addEventListener('load', function() {
 			])
 		);
 
-		let activities = listXpath(document, "//div[contains(concat(' ', @class, ' '), ' feed ')]//div[contains(concat(' ', @class, ' '), ' activity ') and contains(concat(' ', @class, ' '), ' feed-entry ')]", document);
+		let activities = listXpath(document, "//*[@data-react-class = 'Activity' or @data-react-class = 'GroupActivity']//*[./div[@data-testid = 'entry-header']]", document);
 		$.each(activities, function (i, activityEl) {
 			try {
-				let athleteId = document.evaluate("substring-after(.//a[contains(concat(' ', @class, ' '), ' entry-athlete ')]/@href, '/athletes/')", activityEl, null, XPathResult.STRING_TYPE).stringValue;
+				let athleteId = document.evaluate("div//a[@data-testid = 'owner-avatar']/@href", activityEl, null, XPathResult.STRING_TYPE).stringValue;
 				let menuEl = createElementEx(document, "div", { style: "float: right;", id: 'zbynek-strava-club-filter-unwanted-menu' }, [
 					createElementEx(document, "a", { athleteId: athleteId, id: 'zbynek-strava-club-filter-unwanted-hide', onclick: function() { hideUnwantedAthlete(athleteId); } }, [
 						document.createTextNode("Filter out athlete")
 					]),
 				]);
 				removeXpath(document, ".//div[@id = 'zbynek-strava-club-filter-unwanted-menu']", activityEl);
-				document.evaluate(".//div[contains(concat(' ', @class, ' '), ' entry-head ')]", activityEl, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.appendChild(menuEl);
+				document.evaluate(".//div[@data-testid = 'share']", activityEl, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.insertAdjacentElement('beforebegin', menuEl);
 			}
 			catch (err) {
 				console.log(err);
@@ -161,4 +162,4 @@ window.addEventListener('load', function() {
 	updateFeed();
 	setupListener();
 
-}, false);
+})();

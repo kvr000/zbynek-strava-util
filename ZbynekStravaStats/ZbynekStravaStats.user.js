@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaStats/ZbynekStravaStats.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.0
+// @version     1.1.0
 // @include     https://www.strava.com/athletes/*
 // @include     http://www.strava.com/athletes/*
 // @include     https://strava.com/athletes/*
@@ -25,7 +25,7 @@
 // ==/UserScript==
 /*jshint loopfunc:true */
 
-window.addEventListener('load', () => {
+(function() {
 	'use strict';
 	const $ = unsafeWindow.jQuery;
 
@@ -399,15 +399,14 @@ window.addEventListener('load', () => {
 		{
 			const athleteUrl = window.location.pathname;
 			const stats = {};
-			this.sortedStats = Object.entries(this.dwrapper.listXpath("//*[contains(concat(' ', @class, ' '), ' feed-entry ') and not (contains(concat(' ', @class, ' '), ' group-activity ')) and ./div/a[contains(concat(' ', @class, ' '), 'avatar-content') and @href = \""+athleteUrl.replace("\"", "\\\"")+"\"] and .//*[contains(concat(' ', @class, ' '), ' entry-type-icon ')]//span[contains(concat(' ', @class, ' '), ' app-icon ')]]", this.dwrapper.doc).map(
+			this.sortedStats = Object.entries(this.dwrapper.listXpath("//*[@data-react-class = 'Activity' or @data-react-class = 'GroupActivity']//*[./div[@data-testid = 'entry-header'] and .//div/a[@data-testid = 'owner-avatar' and @href = \""+athleteUrl.replace("\"", "\\\"")+"\"]]//ul[contains(concat(' ', @class), ' Stats--list-stats--')]", this.dwrapper.doc).map(
 				(element) => {
-					const typeClasses = this.dwrapper.needXpathNode(".//*[contains(concat(' ', @class, ' '), ' entry-type-icon ')]//span[contains(concat(' ', @class, ' '), ' app-icon ')]/@class", element).textContent.split(/\s+/)
-						.filter((clazz) => clazz != 'app-icon' && clazz != 'icon-dark' && clazz != 'icon-lg');
-					if (typeClasses.length > 0) {
-						const typeClass = typeClasses[0];
-						const distance = this.parseFloat(this.dwrapper.evaluate(".//li[@title = 'Distance']/text()", element, null, XPathResult.STRING_TYPE).stringValue);
-						const elevationGain = this.parseFloat(this.dwrapper.evaluate(".//li[@title = 'Elev Gain']/text()", element, null, XPathResult.STRING_TYPE).stringValue);
-						const time = this.parseDescriptiveTime(this.dwrapper.evaluate(".//li[@title = 'Time']", element, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.textContent);
+					const props = this.dwrapper.evaluate("./ancestor::div[@data-react-class = 'Activity']/@data-react-props", element, null, XPathResult.STRING_TYPE).stringValue;
+					if (props) {
+						const typeClass = JSON.parse(props)?.activity?.type;
+						const distance = this.parseFloat(this.dwrapper.evaluate(".//li//*[span[text() = 'Distance']]/div/text()", element, null, XPathResult.STRING_TYPE).stringValue);
+						const elevationGain = this.parseFloat(this.dwrapper.evaluate(".//li//*[span[text() = 'Elev Gain']]/div/text()", element, null, XPathResult.STRING_TYPE).stringValue);
+						const time = this.parseDescriptiveTime(this.dwrapper.evaluate(".//li//*[span[text() = 'Time']]/div", element, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.textContent);
 						return {
 							activityType: typeClass,
 							distance: distance,
@@ -443,7 +442,7 @@ window.addEventListener('load', () => {
 					}),
 					{}
 				);
-			let selected = this.preferredActivity !== null && this.preferredActivity in this.sortedStats ? this.preferredActivity : Object.keys(this.sortedStats)[0];
+			let selected = this.preferredActivity !== null ? this.preferredActivity : Object.keys(this.sortedStats)[0];
 			if (this.preferredActivity === null) {
 				this.preferredActivity = selected;
 			}
@@ -474,9 +473,9 @@ window.addEventListener('load', () => {
 		selectStat(key)
 		{
 			const stat = this.sortedStats[key];
-			this.dwrapper.needXpathNode(".//*[@id = 'activityDistance']", this.totalsEl).firstChild.textContent = stat.distance?.toFixed(1);
-			this.dwrapper.needXpathNode(".//*[@id = 'activityTime']", this.totalsEl).firstChild.textContent = this.formatTime(stat.time);
-			this.dwrapper.needXpathNode(".//*[@id = 'activityElevationGain']", this.totalsEl).firstChild.textContent = stat.elevationGain?.toFixed(0);
+			this.dwrapper.needXpathNode(".//*[@id = 'activityDistance']", this.totalsEl).firstChild.textContent = stat ? stat.distance?.toFixed(1) : 0;
+			this.dwrapper.needXpathNode(".//*[@id = 'activityTime']", this.totalsEl).firstChild.textContent = stat ? this.formatTime(stat.time) : 0;
+			this.dwrapper.needXpathNode(".//*[@id = 'activityElevationGain']", this.totalsEl).firstChild.textContent = stat ? stat.elevationGain?.toFixed(0) : 0;
 		}
 
 		setupListener()
@@ -524,6 +523,6 @@ window.addEventListener('load', () => {
 		GM_log("Failed to match URL to known pattern, ignoring: "+window.location.pathname);
 	}
 
-}, false);
+})();
 
 // vim: set sw=8 ts=8 noet smarttab:
