@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.1.0
+// @version     1.1.1
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -461,6 +461,17 @@
 			this.scheduleUpdate();
 		}
 
+		dump()
+		{
+			return JSON.stringify(this.cache, null, "\t");
+		}
+
+		load(dump)
+		{
+			this.cache = JSON.parse(dump);
+			this.writeCache();
+		}
+
 		scheduleUpdate()
 		{
 			if (!this.pendingWrite) {
@@ -480,19 +491,14 @@
 					delete this.cache[key];
 				}
 			});
+			this.writeCache();
+		}
+
+		writeCache()
+		{
 			this.itemsToUpdate = {};
 			this.storage.setItem(this.name, JSON.stringify(this.cache));
 			this.pendingWrite = false;
-		}
-
-		dump()
-		{
-			return JSON.stringify(this.cache, null, "\t");
-		}
-
-		load(dump)
-		{
-			this.cache = JSON.parse(dump);
 		}
 
 		loadDb()
@@ -508,6 +514,7 @@
 				});
 			}
 			catch (err) {
+				console.error("Error loading db: ", err);
 			}
 			if (!this.cache) {
 				this.cache = {};
@@ -1553,7 +1560,7 @@
 					});
 			}))
 				.then((results) => {
-					results.filter((result) => result.status == 'rejected').forEach((result) => console.log(result));
+					results.filter((result) => result.status == 'rejected').forEach((result) => console.error(result));
 					this.enrichSegments();
 				});
 		}
