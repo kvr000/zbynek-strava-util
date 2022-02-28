@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaFilterClubUnwanted/ZbynekStravaFilterClubUnwanted.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.0.0
+// @version     1.0.1
 // @grant       GM_addStyle
 // @include     https://www.strava.com/clubs/*/recent_activity
 // @include     http://www.strava.com/clubs/*/recent_activity
@@ -153,7 +153,7 @@
 
 	function setupListener()
 	{
-		let feedEl = needXpath(document, "//div[@class = 'spans11']//div[contains(concat(' ', @class, ' '), ' feed-moby ')]", document);
+		let feedEl = needXpath(document, "//div[@class = 'spans11']//div[contains(concat(' ', @class, ' '), ' feed ')]", document);
 		new MutationObserver(updateFeed).observe(feedEl, { attributes: false, childList: true, subtree: false });
 	}
 
