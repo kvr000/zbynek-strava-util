@@ -11,7 +11,50 @@ It enhances the activity page too - options are available under segment list. It
 
 Additionally, it enhances main segment page by adding more data like elevation gain, level and type markers, protection note and allows easily exporting segment basic information.
 
+The *activity* page and *segment you're looking for* page additionally contain filters at the bottom of the screen - the JS Filter enables filtering by provided JS function, Batch Update allows updating segment preferences based on similar JS function.
+
+JS Filter example:
+```js
+// This includes only up to level 6 (Extreme), non-gravel and non-mtb routes and not yet known segments listed:
+(preference, segment) =>
+	preference.protect == null &&
+	preference.level <= 6 &&
+	preference.type != 'gravel' && preference.type != 'mtb' &&
+	`https://www.strava.com/segments/10589705
+	more-segments-url-to-be-excluded...
+	`.indexOf(String(segment.info.id)+"\n") < 0
+```
+
+Batch Update example:
+```js
+// Anything above 280 W for 20 minutes, 300 W for 10 minutes is categorized as L7 or higher:
+(preference, segment) => {
+	if (preference.level != null && !isNaN(preference.level))
+		return null;
+	console.log(preference, segment.best);
+	if (segment.best.power >= 280 && segment.best.time >= 1200) {
+		return { level: 7+Math.floor((segment.best.power-280)/50) };
+	}
+	if (segment.best.power >= 300 && segment.best.time >= 600) {
+		return { level: 7+Math.floor((segment.best.power-300)/50) };
+	}
+	if (segment.best.power >= 650 && segment.best.time >= 60) {
+		return { level: 7+Math.floor((segment.best.power-650)/100) };
+	}
+	return null;
+}
+```
+
 [Link](ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.js)
+
+
+## ZbynekStravaStats
+
+This enhances Strava profile activities view by showing stats only for the particular activity.
+
+At the top of the screen (right above the calendar selection), you can choose activity type and at the right, the activity distance, time and elevation will be shown for the selected period.
+
+[Link](ZbynekStravaStats/ZbynekStravaStats.user.js)
 
 
 ## ZbynekStravaFilterClubUnwanted
