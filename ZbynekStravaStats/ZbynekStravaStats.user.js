@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaStats/ZbynekStravaStats.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.1.0
+// @version     1.2.0
 // @include     https://www.strava.com/athletes/*
 // @include     http://www.strava.com/athletes/*
 // @include     https://strava.com/athletes/*
@@ -399,16 +399,15 @@
 		{
 			const athleteUrl = window.location.pathname;
 			const stats = {};
-			this.sortedStats = Object.entries(this.dwrapper.listXpath("//*[@data-react-class = 'Activity' or @data-react-class = 'GroupActivity']//*[./div[@data-testid = 'entry-header'] and .//div/a[@data-testid = 'owner-avatar' and @href = \""+athleteUrl.replace("\"", "\\\"")+"\"]]//ul[contains(concat(' ', @class), ' Stats--list-stats--')]", this.dwrapper.doc).map(
+			this.sortedStats = Object.entries(this.dwrapper.listXpath("//*[@class = 'Feed--entry-container--ntrEd' or @data-react-class = 'GroupActivity']//*[./div[@data-testid = 'entry-header'] and .//div/a[@data-testid = 'owner-avatar' and @href = \""+athleteUrl.replace("\"", "\\\"")+"\"]]", this.dwrapper.doc).map(
 				(element) => {
-					const props = this.dwrapper.evaluate("./ancestor::div[@data-react-class = 'Activity']/@data-react-props", element, null, XPathResult.STRING_TYPE).stringValue;
-					if (props) {
-						const typeClass = JSON.parse(props)?.activity?.type;
+					const typeTitle = this.dwrapper.evaluate(".//ancestor::div[contains(concat(' ', @class, ' '), ' Activity--entry-icon--RlkFx ')]/*[local-name() = 'svg']/@title", element, null, XPathResult.STRING_TYPE).stringValue;
+					if (typeTitle) {
 						const distance = this.parseFloat(this.dwrapper.evaluate(".//li//*[span[text() = 'Distance']]/div/text()", element, null, XPathResult.STRING_TYPE).stringValue);
 						const elevationGain = this.parseFloat(this.dwrapper.evaluate(".//li//*[span[text() = 'Elev Gain']]/div/text()", element, null, XPathResult.STRING_TYPE).stringValue);
 						const time = this.parseDescriptiveTime(this.dwrapper.evaluate(".//li//*[span[text() = 'Time']]/div", element, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue.textContent);
 						return {
-							activityType: typeClass,
+							activityType: typeTitle,
 							distance: distance,
 							elevationGain: elevationGain,
 							time: time || 0,
@@ -480,7 +479,7 @@
 
 		setupListener()
 		{
-			let feedEl = this.dwrapper.needXpathNode("//div[contains(concat(' ', @class, ' '), ' feed ')]", document);
+			let feedEl = this.dwrapper.needXpathNode("//div[contains(concat(' ', @class, ' '), ' react-feed-component ')]", document);
 			new MutationObserver(() => this.updateStats()).observe(feedEl, { attributes: false, childList: true, subtree: false });
 			let intervalRidesEl = this.dwrapper.needXpathNode("//div[@id = 'interval-rides']", document);
 			new MutationObserver(() => this.updateStats()).observe(intervalRidesEl, { attributes: false, childList: true, subtree: false });
