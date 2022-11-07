@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.1.1
+// @version     1.1.2
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -1149,7 +1149,7 @@
 		{
 			if (this.filterEnabled) {
 				try {
-					if (!(this.filterFunction = eval(this.dwrapper.needXpathNode(".//div[@id='filter']//textarea").value, this.filterEl))) {
+					if (!(this.filterFunction = eval(this.dwrapper.needXpathNode(".//div[@id='filter']//textarea", this.filterEl).value))) {
 						throw new Error("Empty function provided");
 					}
 				}
@@ -1167,7 +1167,7 @@
 		{
 			let batchFunction;
 			try {
-				if (!(batchFunction = eval(this.dwrapper.needXpathNode(".//div[@id='batchUpdate']//textarea").value, this.filterEl)))
+				if (!(batchFunction = eval(this.dwrapper.needXpathNode(".//div[@id='batchUpdate']//textarea", this.filterEl).value)))
 					throw new Error("Empty function provided");
 			}
 			catch (error) {
@@ -1516,7 +1516,7 @@
 		{
 			if (this.filterEnabled) {
 				try {
-					if (!(this.filterFunction = eval(this.dwrapper.needXpathNode(".//div[@id='filter']//textarea").value, this.filterEl))) {
+					if (!(this.filterFunction = eval(this.dwrapper.needXpathNode(".//div[@id='filter']//textarea", this.filterEl).value))) {
 						throw new Error("Empty function provided");
 					}
 				}
@@ -1534,7 +1534,7 @@
 		{
 			let batchFunction;
 			try {
-				if (!(batchFunction = eval(this.dwrapper.needXpathNode(".//div[@id='batchUpdate']//textarea").value, this.filterEl)))
+				if (!(batchFunction = eval(this.dwrapper.needXpathNode(".//div[@id='batchUpdate']//textarea", this.filterEl).value)))
 					throw new Error("Empty function provided");
 			}
 			catch (error) {
