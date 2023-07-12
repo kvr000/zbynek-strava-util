@@ -12,7 +12,7 @@
 // @updateURL   https://raw.githubusercontent.com/kvr000/zbynek-strava-util/master/ZbynekStravaSegmentInfo/ZbynekStravaSegmentInfo.user.js
 // @supportURL  https://github.com/kvr000/zbynek-strava-util/issues/
 // @contributionURL https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=J778VRUGJRZRG&item_name=Support+features+development.&currency_code=CAD&source=url
-// @version     1.1.2
+// @version     1.1.3
 // @include     https://www.strava.com/activities/*/potential-segment-matches
 // @include     http://www.strava.com/activities/*/potential-segment-matches
 // @include     https://strava.com/activities/*/potential-segment-matches
@@ -831,7 +831,7 @@
 			const qomDate_str = Js.nullElseGet(Js.strEmptyToNull(root.evaluate("//div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-row-') and .//div[text() = 'QOM']]/div[contains(concat(' ', @class), ' AvatarWithDataRow--call-out-date-')]/a/text()", root, null, XPathResult.STRING_TYPE).stringValue),
 				() => bestDetails['QOM']?.rec?.date);;
 			const bestTime_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[@class='last-child']/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
-			const bestSpeed_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'km/h']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
+			const bestSpeed_str = Js.strEmptyToNull(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = ' km/h']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue);
 			const bestBpm_str = Js.strEmptyToNull(Js.regexValueToNull(/^\s*-\s*$/, root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[abbr[text() = 'bpm']]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue));
 			const bestPowerColumn = Js.objMap(root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/thead/tr/th[text() = 'Power']", root, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue, (node) => this.dwrapper.childElementPosition(node));
 			const bestPower_str = Js.objMap(bestPowerColumn, (column) => Js.strEmptyToNull(Js.regexValueToNull(/^\s*-\s*$/, root.evaluate("//table[contains(concat(' ', @class, ' '), 'table-leaderboard')]/tbody/tr[1]/td[position() = "+(column+1)+"]/text()", root, null, XPathResult.STRING_TYPE, null).stringValue)));
